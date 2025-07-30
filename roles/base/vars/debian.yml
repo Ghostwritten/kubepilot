@@ -1,0 +1,20 @@
+# roles/base/vars/debian.yml
+---
+base_packages_os_specific:
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - dnsutils
+  - systemd-timesyncd
+
+services_to_disable:
+  - ufw
+  - apparmor
+
+hostname_file: /etc/hostname
+ntp_package_name: systemd-timesyncd
+ntp_service: systemd-timesyncd
+ntp_config_file: /etc/systemd/timesyncd.conf
+ntp_config_template: timesyncd.conf.j2

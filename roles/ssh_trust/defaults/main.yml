@@ -1,0 +1,3 @@
+ssh_key_dir: "{{ lookup('env', 'HOME') }}/.ssh"
+ssh_private_key_path: "{{ ssh_key_dir }}/id_rsa"
+ssh_public_key_path: "{{ ssh_key_dir }}/id_rsa.pub"

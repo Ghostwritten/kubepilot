@@ -1,0 +1,57 @@
+# roles/base/tasks/system.yml
+---
+- name: Configure system limits
+  pam_limits:
+    domain: "{{ item.domain }}"
+    limit_type: "{{ item.type }}"
+    limit_item: "{{ item.item }}"
+    value: "{{ item.value }}"
+  loop: "{{ system_limits }}"
+  become: true
+  tags: ['system', 'limits']
+
+- name: Ensure systemd system configuration directory exists
+  file:
+    path: /etc/systemd/system.conf.d
+    state: directory
+    mode: '0755'
+  become: true
+  tags: ['system', 'systemd']
+
+- name: Configure systemd limits
+  template:
+    src: kubernetes.conf.systemd.j2
+    dest: /etc/systemd/system.conf.d/kubernetes.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: reload systemd
+  tags: ['system', 'systemd']
+
+- name: Disable unnecessary services
+  systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ services_to_disable | default([]) }}"
+  become: true
+  ignore_errors: true
+  tags: ['system', 'services']
+
+- name: Configure log rotation for Kubernetes
+  template:
+    src: kubernetes-logs.j2
+    dest: /etc/logrotate.d/kubernetes
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  tags: ['system', 'logging']
+
+- name: Set timezone
+  timezone:
+    name: "{{ system_timezone | default('UTC') }}"
+  become: true
+  when: system_timezone is defined
+  tags: ['system', 'timezone']

@@ -1,0 +1,69 @@
+# =============================================================================
+# cluster.yml - Main KubePilot Cluster Deployment Playbook
+# =============================================================================
+---
+- name: "Phase 1: Configure SSH passwordless authentication"
+  import_playbook: playbooks/ssh_trust.yml
+  vars:
+    phase_name: "SSH Configuration"
+    phase_description: "Setup SSH key-based authentication between nodes"
+  tags: 
+    - ssh
+    - authentication
+    - phase1
+    - optional
+
+- name: "Phase 2: Configure host baseline settings"
+  import_playbook: playbooks/base.yml
+  vars:
+    phase_name: "System Preparation"
+    phase_description: "Configure timezone, limits, disable swap, system optimization, and offline repositories"
+  tags: 
+    - base
+    - phase2
+    - preparation
+
+- name: "Phase 3: Install container runtime stack"
+  import_playbook: playbooks/install_containerd.yml
+  vars:
+    phase_name: "Container Runtime"
+    phase_description: "Install containerd, runc, nerdctl, crictl, and CNI plugins"
+  tags: 
+    - containerd
+    - runtime
+    - phase3
+    - cri
+
+- name: "Phase 4: Deploy Kubernetes control plane and components"
+  import_playbook: playbooks/install_k8s.yml
+  vars:
+    phase_name: "Kubernetes Installation"
+    phase_description: "Initialize Kubernetes cluster and install core components"
+  tags: 
+    - install_k8s
+    - kubernetes
+    - phase4
+    - controlplane
+
+- name: "Phase 5: Deploy CNI network plugin"
+  import_playbook: playbooks/install_calico.yml
+  vars:
+    phase_name: "Network Plugin"
+    phase_description: "Install and configure Calico CNI for pod networking"
+  tags: 
+    - install_calico
+    - networking
+    - phase5
+    - cni
+
+- name: "Phase 6: Join worker nodes to cluster"
+  import_playbook: playbooks/node.yml
+  vars:
+    phase_name: "Node Registration"
+    phase_description: "Add worker nodes to the Kubernetes cluster"
+  tags: 
+    - join_node
+    - workers
+    - phase6
+    - scaling
+

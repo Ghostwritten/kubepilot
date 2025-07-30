@@ -1,0 +1,36 @@
+- name: "Check if deployment node already has public key"
+  stat:
+    path: "{{ ssh_public_key_path }}"
+  delegate_to: localhost
+  register: pubkey_check
+
+- name: "Generate deployment node SSH key pair (if not exists)"
+  command: ssh-keygen -t rsa -N '' -f "{{ ssh_private_key_path }}"
+  when: not pubkey_check.stat.exists
+  delegate_to: localhost
+
+- name: "Read deployment node public key content"
+  slurp:
+    src: "{{ ssh_public_key_path }}"
+  delegate_to: localhost
+  register: pubkey
+
+- name: "Get target user home directory path"
+  set_fact:
+    user_home: "{{ lookup('pipe', 'getent passwd ' + ansible_user + ' | cut -d: -f6') }}"
+  when: ansible_user is defined
+
+- name: "Create .ssh directory (compatible with root and non-root users)"
+  file:
+    path: "{{ user_home }}/.ssh"
+    state: directory
+    mode: '0700'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: "Add deployment node public key to target host authorized_keys"
+  authorized_key:
+    user: "{{ ansible_user }}"
+    key: "{{ pubkey.content | b64decode }}"
+    state: present
+    manage_dir: false

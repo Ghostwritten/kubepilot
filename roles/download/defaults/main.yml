@@ -1,0 +1,94 @@
+# =============================================================================
+# roles/download/defaults/main.yml - Download Role Default Variables
+# =============================================================================
+---
+# Container runtime component versions
+runc_version: "1.2.4"
+containerd_version: "2.1.3"
+nerdctl_version: "2.1.2"
+crictl_version: "v1.33.0"
+cni_version: "v1.7.1"
+
+# Additional tools and components
+helm_version: "v3.16.2"
+etcd_version: "3.5.15-0"
+coredns_version: "v1.11.1"
+
+# Netowork plugin
+calico_version: "v3.28.2"
+
+# Architecture and platform settings
+image_arch: "amd64"
+k8s_download_arch: "x86_64"
+alt_arch_mapping:
+  amd64: "x86_64"
+  arm64: "aarch64"
+
+# Download acceleration mirrors (configure as needed)
+download_mirrors:
+  kubernetes:
+    official: "https://dl.k8s.io"
+    aliyun: "https://mirrors.aliyun.com/kubernetes"
+    tencent: "https://mirrors.tencent.com/kubernetes"
+  github:
+    official: "https://github.com"
+    mirror: "https://mirror.ghproxy.com/https://github.com"
+  docker:
+    official: "https://download.docker.com"
+    aliyun: "https://mirrors.aliyun.com/docker-ce"
+
+# Default mirror selection (can be overridden)
+kube_download_mirror: "{{ download_mirrors.kubernetes.official }}"
+github_download_mirror: "{{ download_mirrors.github.official }}"
+
+# Download behavior configuration
+download_retries: 3
+download_delay: 5
+download_timeout: 300
+download_validate_checksums: true
+download_force_refresh: false
+
+# Offline mode configuration
+offline_mode: "{{ kubepilot_offline_mode | default(false) }}"
+offline_download_dir: "{{ playbook_dir }}/../download"
+offline_files_dir: "{{ offline_download_dir }}/files"
+offline_rpms_dir: "{{ offline_download_dir }}/rpms"
+offline_images_dir: "{{ offline_download_dir }}/images"
+
+# Container images to download
+container_images:
+  # Kubernetes core images
+  kube_apiserver: "registry.k8s.io/kube-apiserver:v{{ kube_version }}"
+  kube_controller_manager: "registry.k8s.io/kube-controller-manager:v{{ kube_version }}"
+  kube_scheduler: "registry.k8s.io/kube-scheduler:v{{ kube_version }}"
+  kube_proxy: "registry.k8s.io/kube-proxy:v{{ kube_version }}"
+  pause: "registry.k8s.io/pause:3.9"
+  etcd: "registry.k8s.io/etcd:{{ etcd_version }}"
+  coredns: "registry.k8s.io/coredns/coredns:{{ coredns_version }}"
+  
+  # CNI and networking
+  calico_node: "docker.io/calico/node:{{ calico_version }}"
+  calico_cni: "docker.io/calico/cni:{{ calico_version }}"
+  calico_kube_controllers: "docker.io/calico/kube-controllers:{{ calico_version }}"
+  
+  # Additional tools
+  metrics_server: "registry.k8s.io/metrics-server/metrics-server:v0.7.2"
+  nginx_ingress: "registry.k8s.io/ingress-nginx/controller:v1.11.2"
+
+# Download URLs configuration
+download_urls:
+  kubeadm: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ image_arch }}/kubeadm"
+  kubectl: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ image_arch }}/kubectl"
+  kubelet: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ image_arch }}/kubelet"
+  runc: "{{ github_download_mirror }}/opencontainers/runc/releases/download/v{{ runc_version }}/runc.{{ image_arch }}"
+  containerd: "{{ github_download_mirror }}/containerd/containerd/releases/download/v{{ containerd_version }}/containerd-{{ containerd_version }}-linux-{{ image_arch }}.tar.gz"
+  nerdctl: "{{ github_download_mirror }}/containerd/nerdctl/releases/download/v{{ nerdctl_version }}/nerdctl-{{ nerdctl_version }}-linux-{{ image_arch }}.tar.gz"
+  crictl: "{{ github_download_mirror }}/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
+  cni_plugins: "{{ github_download_mirror }}/containernetworking/plugins/releases/download/{{ cni_version }}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
+  helm: "https://get.helm.sh/{{ helm_version }}/helm-{{ helm_version }}-linux-{{ image_arch }}.tar.gz"
+
+# Checksum validation URLs (for security)
+checksum_urls:
+  kubeadm: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ image_arch }}/kubeadm.sha256"
+  kubectl: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ image_arch }}/kubectl.sha256"
+  kubelet: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ image_arch }}/kubelet.sha256"

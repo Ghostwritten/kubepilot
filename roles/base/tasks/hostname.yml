@@ -1,0 +1,55 @@
+# roles/base/tasks/hostname.yml
+---
+- name: Backup /etc/hosts file
+  copy:
+    src: /etc/hosts
+    dest: "/etc/hosts{{ backup_suffix }}"
+    remote_src: true
+    mode: '0644'
+  when: backup_configs | default(true)
+  become: true
+  tags: ['hostname', 'backup']
+
+- name: Ensure localhost entries in /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ item }}"
+    state: present
+    insertbefore: BOF
+  loop:
+    - "127.0.0.1 localhost localhost.localdomain"
+    - "::1 localhost localhost.localdomain"
+  become: true
+  tags: ['hostname', 'localhost']
+
+- name: Configure hostname resolution for cluster nodes
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[item].ansible_host | default(hostvars[item].ansible_default_ipv4.address) }} {{ item }} {{ hostvars[item].ansible_hostname | default(item) }}"
+    state: present
+    regexp: "^{{ hostvars[item].ansible_host | default(hostvars[item].ansible_default_ipv4.address) }}\\s+{{ item }}"
+  loop: "{{ groups['all'] }}"
+  when: 
+    - configure_hostname_resolution | default(true)
+    - hostvars[item].ansible_host is defined or hostvars[item].ansible_default_ipv4 is defined
+    - item != inventory_hostname
+  become: true
+  notify: validate hostname resolution
+  tags: ['hostname', 'cluster']
+
+- name: Set system hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  become: true
+  when: ansible_hostname != inventory_hostname
+  tags: ['hostname', 'system']
+
+- name: Ensure hostname persists after reboot
+  lineinfile:
+    path: "{{ hostname_file }}"
+    line: "{{ inventory_hostname }}"
+    create: true
+    mode: '0644'
+  become: true
+  when: hostname_file is defined
+  tags: ['hostname', 'persistent']

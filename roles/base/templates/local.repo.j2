@@ -1,0 +1,7 @@
+# This file is managed by Ansible.
+# Local repository configuration for YUM.
+[local]
+name=Local RPM Repository
+baseurl={{ repository.yum_url }}
+enabled=1
+gpgcheck=0

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible ansible-lint yamllint
+    
+    - name: Lint Ansible playbooks
+      run: |
+        ansible-lint cluster.yml reset.yml
+    
+    - name: Lint YAML files
+      run: |
+        yamllint .
+
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    
+    - name: Install Ansible
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible
+    
+    - name: Check playbook syntax
+      run: |
+        ansible-playbook --syntax-check cluster.yml
+        ansible-playbook --syntax-check reset.yml

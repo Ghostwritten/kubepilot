@@ -1,0 +1,181 @@
+---
+- name: Reset Kubernetes cluster state with kubeadm
+  shell: kubeadm reset -f
+  become: true
+  ignore_errors: true
+  tags: ['reset', 'kubeadm']
+
+- name: Stop and disable kubelet service
+  systemd:
+    name: kubelet
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  become: true
+  ignore_errors: true
+  tags: ['services', 'kubelet']
+
+- name: Check if kubelet package is installed
+  package_facts:
+    manager: auto
+  tags: ['packages', 'check']
+
+- name: Remove kubelet package
+  package:
+    name: "kubelet-{{ kube_version_full | default('*') }}"
+    state: absent
+  when: "'kubelet' in ansible_facts.packages"
+  become: true
+  tags: ['packages', 'kubelet']
+
+- name: Remove kubeadm package
+  package:
+    name: "kubeadm-{{ kube_version_full | default('*') }}"
+    state: absent
+  when: "'kubeadm' in ansible_facts.packages"
+  become: true
+  tags: ['packages', 'kubeadm']
+
+- name: Remove kubectl package
+  package:
+    name: "kubectl-{{ kube_version_full | default('*') }}"
+    state: absent
+  when: "'kubectl' in ansible_facts.packages"
+  become: true
+  tags: ['packages', 'kubectl']
+
+- name: Remove Kubernetes component directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/kubernetes
+    - /var/lib/kubelet
+    - /var/lib/etcd
+    - /var/run/kubernetes
+    - /var/log/pods
+  become: true
+  tags: ['cleanup', 'directories', 'kubernetes']
+
+- name: Stop and disable container runtime service
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - containerd
+    - docker
+  become: true
+  ignore_errors: true 
+  tags: ['cleanup', 'services', 'containers']
+
+- name: Remove CNI directories and configurations
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/cni/net.d
+    - /opt/cni
+    - /var/lib/cni
+    - /var/lib/calico
+  become: true
+  tags: ['cleanup', 'directories', 'cni']
+
+- name: Attempt to remove /var/run/calico and ignore errors
+  file:
+    path: /var/run/calico
+    state: absent
+  become: true
+  ignore_errors: true 
+  tags: ['cleanup', 'directories', 'cni']
+
+- name: Remove Kubernetes binary files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/bin/kubelet
+    - /usr/bin/kubeadm
+    - /usr/bin/kubectl
+  become: true
+  ignore_errors: true
+  tags: ['cleanup', 'binaries']
+
+- name: Clean up network interfaces
+  shell: |
+    set -e
+    for interface in cni0 flannel.1 vxlan.calico docker0 kube-bridge; do
+      if ip link show "$interface" &>/dev/null; then
+        ip link delete "$interface" || echo "Failed to delete $interface"
+      fi
+    done
+  become: true
+  ignore_errors: true
+  tags: ['cleanup', 'network', 'interfaces']
+
+- name: Flush iptables rules
+  shell: |
+    set -e
+    # IPv4 rules
+    iptables -F && iptables -X
+    iptables -t nat -F && iptables -t nat -X
+    iptables -t raw -F && iptables -t raw -X
+    iptables -t mangle -F && iptables -t mangle -X
+    
+    # IPv6 rules
+    ip6tables -F && ip6tables -X
+    ip6tables -t nat -F && ip6tables -t nat -X || true
+    ip6tables -t raw -F && ip6tables -t raw -X || true
+    ip6tables -t mangle -F && ip6tables -t mangle -X || true
+  become: true
+  ignore_errors: true
+  tags: ['cleanup', 'network', 'iptables']
+
+- name: Clean up container runtime directories (optional)
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/containerd
+    - /etc/containerd
+    - /var/lib/docker
+    - /etc/docker
+  become: true
+  ignore_errors: true
+  when: cleanup_container_runtime | default(false)
+  tags: ['cleanup', 'containers', 'optional']
+
+- name: Restart network service (if using traditional networking)
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - network
+    - NetworkManager
+  become: true
+  ignore_errors: true
+  when: restart_network_services | default(false)
+  tags: ['services', 'network', 'optional']
+
+- name: Read deployment node public key content for removal
+  slurp:
+    src: "{{ ssh_public_key_path | default('~/.ssh/id_rsa.pub') }}"
+  delegate_to: localhost
+  register: pubkey_for_removal
+  when: pubkey_check.stat.exists
+  tags: ['cleanup', 'ssh']
+
+- name: Remove deployment node public key from target host's authorized_keys
+  authorized_key:
+    user: "{{ ansible_user }}"
+    key: "{{ pubkey_for_removal.content | b64decode }}"
+    state: absent
+    manage_dir: false
+  when: pubkey_check.stat.exists
+  become: true
+  tags: ['cleanup', 'ssh']
+
+- name: Display reset completion status
+  debug:
+    msg: "Kubernetes cluster reset completed on {{ inventory_hostname }}"
+  tags: ['status']

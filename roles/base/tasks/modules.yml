@@ -1,0 +1,56 @@
+# roles/base/tasks/modules.yml
+---
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ kernel_modules }}"
+  become: true
+  ignore_errors: true
+  register: modprobe_result
+  tags: ['modules', 'load']
+
+- name: Debug module loading failures
+  debug:
+    msg: "Failed to load module {{ item.item }}: {{ item.msg | default('Unknown error') }}"
+  loop: "{{ modprobe_result.results }}"
+  when: 
+    - item.failed is defined
+    - item.failed
+    - item.item in ['br_netfilter', 'overlay']
+  tags: ['modules', 'debug']
+
+- name: Ensure modules directory exists
+  file:
+    path: /etc/modules-load.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+  tags: ['modules', 'persistent']
+
+- name: Configure persistent kernel module loading
+  template:
+    src: kubernetes.conf.j2
+    dest: /etc/modules-load.d/kubernetes.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: "{{ backup_configs | default(true) }}"
+  become: true
+  tags: ['modules', 'persistent']
+
+- name: Verify critical modules are loaded
+  shell: lsmod | grep -E "^(br_netfilter|overlay|nf_conntrack)"
+  register: modules_check
+  changed_when: false
+  failed_when: false
+  become: true
+  tags: ['modules', 'verify']
+
+- name: Display loaded modules status
+  debug:
+    msg: "Loaded modules: {{ modules_check.stdout_lines | default([]) }}"
+  when: modules_check.stdout_lines is defined
+  tags: ['modules', 'status']

@@ -1,0 +1,75 @@
+# =============================================================================
+# roles/download/tasks/download_images.yml - Container Images Download
+# =============================================================================
+---
+- name: "Detect available container management tool"
+  block:
+    - name: "Check for Docker"
+      command: "docker --version"
+      register: docker_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Check for Podman"
+      command: "podman --version"
+      register: podman_check
+      changed_when: false
+      ignore_errors: true
+      when: docker_check.rc != 0
+
+    - name: "Check for nerdctl"
+      command: "nerdctl --version"
+      register: nerdctl_check
+      changed_when: false
+      ignore_errors: true
+      when: docker_check.rc != 0 and podman_check.rc != 0
+
+    - name: "Set container tool fact (docker > podman > nerdctl)"
+      set_fact:
+        container_tool: >-
+          {%- if docker_check.rc == 0 -%}
+          docker
+          {%- elif podman_check.rc == 0 -%}
+          podman
+          {%- elif nerdctl_check.rc == 0 -%}
+          nerdctl
+          {%- else -%}
+          none
+          {%- endif -%}
+
+    - name: "Fail if no container tool is found"
+      fail:
+        msg: "No container management tool (docker, podman, or nerdctl) found on the host. Please install one to proceed."
+      when: container_tool == "none"
+  when: offline_mode | bool
+  tags:
+    - download_images
+    - offline
+
+- name: "Pull and save container images using '{{ container_tool }}'"
+  shell: |
+    set -e
+    IMAGE_NAME="{{ item.value }}"
+    DEST_FILE="{{ offline_images_dir }}/{{ item.key }}.tar"
+  
+    echo "Pulling image: ${IMAGE_NAME}"
+    {{ container_tool }} pull "${IMAGE_NAME}"
+  
+    echo "Preparing to save image to ${DEST_FILE}"
+    # Ensure the destination file does not exist to prevent 'podman save' error
+    rm -f "${DEST_FILE}"
+  
+    echo "Saving image: ${IMAGE_NAME}"
+    {{ container_tool }} save "${IMAGE_NAME}" -o "${DEST_FILE}"
+  loop: "{{ container_images | dict2items }}"
+  args:
+    executable: /bin/bash # Use bash for 'set -e'
+  environment: "{{ proxy_env | default({}) }}" # Apply proxy settings
+  register: download_images_result
+  retries: "{{ download_retries }}"
+  delay: "{{ download_delay }}"
+  until: download_images_result.rc == 0
+  when: offline_mode | bool and container_tool is defined and container_tool != "none"
+  tags:
+    - download_images
+    - offline

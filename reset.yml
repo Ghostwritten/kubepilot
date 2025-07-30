@@ -1,0 +1,71 @@
+# =============================================================================
+# reset.yml - Complete Kubernetes Cluster Reset Playbook
+# =============================================================================
+---
+- name: "KubePilot: Complete Kubernetes cluster cleanup and reset"
+  hosts: all
+  become: true
+  gather_facts: true
+  serial: "{{ reset_serial | default('100%') }}"
+  vars:
+    reset_confirmation: "{{ kubepilot_reset_confirmed | default(false) }}"
+    preserve_data: "{{ kubepilot_preserve_data | default(false) }}"
+    
+  pre_tasks:
+    - name: "Safety check: Confirm cluster reset operation"
+      pause:
+        prompt: |
+          ⚠️  WARNING: This will completely destroy your Kubernetes cluster!
+          
+          This operation will:
+          - Remove all Kubernetes components and configurations
+          - Delete all container images and volumes
+          - Reset network configurations
+          - Remove etcd data (unless preserve_data=true)
+          
+          Type 'yes' or 'y' to continue or press Ctrl+C to abort
+      register: reset_confirmation_input
+      when: not reset_confirmation
+      delegate_to: localhost
+      run_once: true
+
+    - name: "Validate reset confirmation"
+      fail:
+        msg: "Reset operation cancelled by user"
+      when: 
+        - not reset_confirmation
+        - (reset_confirmation_input.user_input | default('') | lower) not in ['yes', 'y']
+      run_once: true
+
+    - name: "Display reset parameters"
+      debug:
+        msg: |
+          Reset Configuration:
+          - Preserve data: {{ preserve_data }}
+          - Target hosts: {{ ansible_play_hosts | join(', ') }}
+          - Serial execution: {{ reset_serial | default('100%') }}
+      run_once: true
+
+  tasks:
+    - name: "Execute cluster reset procedures"
+      import_role:
+        name: reset
+      vars:
+        reset_preserve_data: "{{ preserve_data }}"
+      tags: 
+        - reset
+        - cleanup
+        - destroy
+
+  post_tasks:
+    - name: "Display reset completion status"
+      debug:
+        msg: |
+          ✅ Cluster reset completed successfully!
+          
+          Next steps:
+          1. Verify all services are stopped
+          2. Check for any remaining container processes
+          3. Optionally reboot nodes for complete cleanup
+          4. Re-run cluster.yml to redeploy if needed
+      run_once: true

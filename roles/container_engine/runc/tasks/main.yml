@@ -1,0 +1,23 @@
+# roles/container_engine/runc/tasks/main.yml
+---
+- name: Set runc binary name and download URL
+  ansible.builtin.set_fact:
+    runc_binary_name: "runc.{{ image_arch }}"
+    runc_download_url_resolved: >-
+      {{
+        (offline_mode | default(false)) | ternary(
+          files_repo + '/' + 'runc.' + image_arch,
+          'https://github.com/opencontainers/runc/releases/download/v' + runc_version + '/runc.' + image_arch
+        )
+      }}
+  # Note: The online URL requires 'v' prefix for the version, e.g., v1.2.4
+
+- name: Download and install runc binary (offline or online)
+  ansible.builtin.get_url:
+    url: "{{ runc_download_url_resolved }}"
+    dest: "/usr/local/bin/runc"
+    mode: '0755'
+    checksum: "{{ runc_checksum | default(omit) }}"
+  retries: 3
+  delay: 5
+  environment: "{{ (offline_mode | default(false)) | ternary({}, proxy_env) }}"

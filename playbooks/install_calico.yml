@@ -1,0 +1,26 @@
+# playbooks/install_calico.yml
+# =============================================================================
+#
+#  Deploy Calico CNI to the Kubernetes Cluster
+#
+#  This playbook orchestrates the deployment of the Calico network plugin.
+#  It is structured in two parts:
+#    1. Apply the Calico manifest to the cluster. This is done once on a
+#       single control plane node.
+#    2. Install the 'calicoctl' utility on all control plane nodes for
+#       management purposes.
+#
+#  Usage:
+#    ansible-playbook -i <your_inventory> playbooks/install_calico.yml
+#
+- name: "Deploy Calico CNI Manifest"
+  hosts: kube_control_plane[0]
+  become: true
+  gather_facts: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  tasks:
+    - name: "Import Calico deployment role"
+      import_role:
+        name: network_plugin/calico
+      tags: install_calico

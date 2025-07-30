@@ -1,0 +1,91 @@
+# =============================================================================
+# playbooks/download.yml - Enhanced Download Playbook
+# =============================================================================
+---
+- name: "KubePilot: Download Kubernetes and container runtime components"
+  hosts: localhost
+  gather_facts: true
+  vars:
+    download_start_time: "{{ ansible_date_time.epoch }}"
+    
+  pre_tasks:
+    - name: "Display download configuration"
+      debug:
+        msg: |
+          🚀 KubePilot Download Phase Starting
+          ====================================
+          Target: {{ inventory_hostname }}
+          Kubernetes Version: {{ kube_version }}
+          Architecture: {{ image_arch }}
+          Offline Mode: {{ offline_mode | default(false) }}
+          Download Directory: {{ offline_download_dir }}
+          Proxy Configuration: {{ 'Enabled' if proxy_env is defined else 'Disabled' }}
+      tags: always
+
+    - name: "Verify internet connectivity"
+      uri:
+        url: "https://www.google.com"
+        method: HEAD
+        timeout: 10
+      register: connectivity_check
+      ignore_errors: true
+      when: not offline_mode | default(false)
+      tags: 
+        - connectivity
+        - preflight
+
+    - name: "Check available disk space"
+      shell: df -h {{ offline_download_dir | dirname }} | tail -1 | awk '{print $4}'
+      register: available_space
+      tags: 
+        - preflight
+        - storage
+
+    - name: "Validate disk space requirements"
+      fail:
+        msg: "Insufficient disk space. At least 5GB required for downloads."
+      when: 
+        - available_space.stdout is defined
+        - available_space.stdout | regex_replace('[GM]', '') | int < 5
+      tags: 
+        - preflight
+        - storage
+
+  tasks:
+    - name: "Execute download operations"
+      import_role:
+        name: download
+      vars:
+        download_phase: "offline_preparation"
+      tags: 
+        - download
+        - main
+
+  post_tasks:
+    - name: "Calculate download duration"
+      set_fact:
+        download_duration: "{{ ansible_date_time.epoch | int - download_start_time | int }}"
+      tags: always
+
+    - name: "Display download completion summary"
+      debug:
+        msg: |
+          ✅ KubePilot Download Phase Completed
+          ====================================
+          Duration: {{ download_duration }}s
+          Download Directory: {{ offline_download_dir }}
+          
+          Downloaded Components:
+          • Kubernetes {{ kube_version }} binaries
+          • Containerd {{ containerd_version }} runtime
+          • CNI plugins {{ cni_version }}
+          • Calico networking manifests
+          • Additional operational tools
+          
+          📋 Download manifest: {{ offline_download_dir }}/download-manifest.yml
+          
+          Next Steps:
+          1. Review downloaded files in {{ offline_download_dir }}
+          2. Transfer to air-gapped environment if needed
+          3. Run cluster deployment: ansible-playbook cluster.yml
+      tags: always

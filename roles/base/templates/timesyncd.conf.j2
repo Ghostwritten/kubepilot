@@ -1,0 +1,9 @@
+# This file is managed by Ansible. Do not edit manually.
+# For systemd-timesyncd (used on Debian/Ubuntu systems)
+
+[Time]
+NTP={{ ntp_servers | join(' ') }}
+FallbackNTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org 3.debian.pool.ntp.org
+RootDistanceMaxSec=5
+PollIntervalMinSec=32
+PollIntervalMaxSec=2048

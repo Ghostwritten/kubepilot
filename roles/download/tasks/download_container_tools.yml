@@ -1,0 +1,38 @@
+# roles/download/tasks/download_container_tools.yml
+---
+- name: "Download container runtime binaries"
+  get_url:
+    url: "{{ download_urls[item.name] }}"
+    dest: "{{ offline_files_dir }}/{{ download_urls[item.name] | basename }}"
+    mode: "{{ item.mode }}"
+    timeout: "{{ download_timeout }}"
+    backup: true
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_runtime_binaries_result
+  retries: "{{ download_retries }}"
+  delay: "{{ download_delay }}"
+  until: download_runtime_binaries_result is succeeded
+  loop:
+    - { name: 'runc',        mode: '0755' }
+    - { name: 'containerd',  mode: '0644' }
+    - { name: 'nerdctl',     mode: '0644' }
+    - { name: 'crictl',      mode: '0644' }
+    - { name: 'cni_plugins', mode: '0644' }
+  tags: 
+    - download_container_tools
+    - runtime
+
+- name: "Download containerd systemd service file"
+  get_url:
+    url: "https://raw.githubusercontent.com/containerd/containerd/v{{ containerd_version }}/containerd.service"
+    dest: "{{ offline_files_dir }}/containerd.service"
+    mode: '0644'
+    timeout: "{{ download_timeout }}"
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_containerd_service
+  retries: "{{ download_retries }}"
+  delay: "{{ download_delay }}"
+  until: download_containerd_service is succeeded
+  tags: 
+    - download_container_tools
+    - systemd

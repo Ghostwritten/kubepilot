@@ -1,0 +1,24 @@
+# roles/base/tasks/packages.yml
+---
+- name: Update package cache (Debian/Ubuntu)
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+  become: true
+  tags: ['packages', 'cache']
+
+- name: Install base packages
+  package:
+    name: "{{ base_packages }}"
+    state: present
+  become: true
+  tags: ['packages', 'install']
+
+- name: Install additional OS-specific packages
+  package:
+    name: "{{ additional_packages | default([]) }}"
+    state: present
+  when: additional_packages is defined
+  become: true
+  tags: ['packages', 'additional']

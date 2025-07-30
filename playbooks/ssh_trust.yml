@@ -1,0 +1,5 @@
+- name: 配置 SSH 互信
+  hosts: all
+  gather_facts: false
+  roles:
+    - ssh_trust

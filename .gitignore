@@ -1,0 +1,45 @@
+# Ansible
+*.retry
+.ansible/
+ansible.log
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Inventory files with sensitive data
+inventory/*/group_vars/all/vault.yml
+inventory/*/host_vars/*/vault.yml
+
+# SSL certificates and keys
+*.pem
+*.key
+*.crt
+*.csr
+
+# Backup files
+*.bak
+*.backup

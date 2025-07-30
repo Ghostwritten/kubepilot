@@ -1,0 +1,78 @@
+- name: Set temporary paths for containerd
+  set_fact:
+    containerd_tarball: "/tmp/containerd-{{ containerd_version }}-linux-{{ image_arch }}.tar.gz"
+    containerd_service_path: "/tmp/containerd.service"
+    containerd_download_url_resolved: >-
+      {{
+        (offline_mode | default(false)) | ternary(
+          files_repo + '/containerd-' + containerd_version + '-linux-' + image_arch + '.tar.gz',
+          'https://github.com/containerd/containerd/releases/download/v' + containerd_version + '/containerd-' + containerd_version + '-linux-' + image_arch + '.tar.gz'
+        )
+      }}
+
+- name: Create required directories for containerd
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ containerd_config_path | default('/etc/containerd') }}"
+    - "{{ containerd_storage_dir | default('/var/lib/containerd') }}"
+    - "{{ containerd_state_dir | default('/run/containerd') }}"
+
+- name: Download containerd package (online or offline)
+  get_url:
+    url: "{{ containerd_download_url_resolved }}"
+    dest: "{{ containerd_tarball }}"
+    mode: '0644'
+    checksum: "{{ containerd_checksum | default(omit) }}"
+  retries: 3
+  delay: 5
+  environment: "{{ (offline_mode | default(false)) | ternary({}, proxy_env) }}"
+  register: containerd_download_result
+
+- name: Extract containerd to /usr/local
+  unarchive:
+    src: "{{ containerd_tarball }}"
+    dest: "/usr/local"
+    remote_src: true
+    creates: "/usr/local/bin/containerd"
+  
+- name: Remove containerd package archive
+  file:
+    path: "{{ containerd_tarball }}"
+    state: absent
+  when: cleanup_enabled | default(true)
+
+- name: Download containerd.service file (offline only)
+  get_url:
+    url: "{{ files_repo }}/containerd.service"
+    dest: "{{ containerd_service_path }}"
+    mode: '0644'
+  when: offline_mode | default(false)
+
+- name: Install containerd systemd service file
+  copy:
+    src: "{{ containerd_service_path }}"
+    dest: /usr/lib/systemd/system/containerd.service
+    remote_src: true
+    mode: '0644'
+
+- name: Enable and start containerd service
+  systemd:
+    name: containerd
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Render containerd config.toml configuration file
+  template:
+    src: config.toml.j2
+    dest: "{{ containerd_config_path | default('/etc/containerd') }}/config.toml"
+    mode: '0644'
+  notify: restart containerd
+
+- name: Restart containerd to apply configuration changes
+  systemd:
+    name: containerd
+    state: restarted

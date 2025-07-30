@@ -1,0 +1,58 @@
+# =============================================================================
+# roles/download/tasks/download_calico.yml - CNI Plugin Download
+# =============================================================================
+---
+- name: "Set Calico versioned directory path as a fact" # <-- NEW set_fact TASK
+  set_fact:
+    calico_versioned_dir: "{{ offline_files_dir }}/calico/{{ calico_version }}"
+  tags:
+    - download_calico
+    - manifests
+    - tools
+
+- name: "Ensure Calico version-specific download directory exists"
+  ansible.builtin.file:
+    path: "{{ calico_versioned_dir }}" # Use the fact we just created
+    state: directory
+    mode: '0755'
+  tags:
+    - download_calico
+    - manifests
+    - tools
+
+- name: "Download Calico CNI plugin manifests"
+  get_url:
+    url: "{{ item.url }}"
+    dest: "{{ calico_versioned_dir }}/{{ item.name }}" # Use the fact
+    mode: '0644'
+    timeout: "{{ download_timeout }}"
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_calico_manifests_result
+  retries: "{{ download_retries }}"
+  delay: "{{ download_delay }}"
+  until: download_calico_manifests_result is succeeded
+  loop:
+    - name: "calico.yaml"
+      url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
+    - name: "calico-tigera-operator.yaml"
+      url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
+    - name: "calico-custom-resources.yaml"
+      url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/custom-resources.yaml"
+  tags: 
+    - download_calico
+    - manifests
+
+- name: "Download Calico calicoctl utility"
+  get_url:
+    url: "https://github.com/projectcalico/calico/releases/download/{{ calico_version }}/calicoctl-linux-{{ image_arch }}"
+    dest: "{{ calico_versioned_dir }}/calicoctl" # Use the fact
+    mode: '0755'
+    timeout: "{{ download_timeout }}"
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_calicoctl
+  retries: "{{ download_retries }}"
+  delay: "{{ download_delay }}"
+  until: download_calicoctl is succeeded
+  tags: 
+    - download_calico
+    - tools

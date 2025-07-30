@@ -1,0 +1,72 @@
+# =============================================================================
+# roles/download/tasks/main.yml - Main Download Tasks
+# =============================================================================
+---
+- name: "Display download phase information"
+  debug:
+    msg: |
+      🔄 KubePilot Download Phase
+      ==========================
+      Kubernetes Version: {{ kube_version }}
+      Container Runtime: containerd {{ containerd_version }}
+      Architecture: {{ image_arch }}
+      Offline Mode: {{ offline_mode }}
+      Download Directory: {{ offline_download_dir }}
+  tags: always
+
+- name: "Create download directory structure"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ offline_download_dir }}"
+    - "{{ offline_files_dir }}"
+    - "{{ offline_rpms_dir }}"
+    - "{{ offline_images_dir }}"
+    - "{{ offline_rpms_dir }}/kubernetes"
+  tags: 
+    - download
+    - prepare
+
+- name: "Download Kubernetes binaries and tools"
+  import_tasks: download_k8s.yml
+  tags: 
+    - download
+    - download_k8s
+    - binaries
+
+- name: "Download container runtime components"
+  import_tasks: download_container_tools.yml
+  tags: 
+    - download
+    - download_container_tools
+    - runtime
+
+- name: "Download CNI and networking components"
+  import_tasks: download_calico.yml
+  tags: 
+    - download
+    - download_calico
+    - networking
+
+- name: "Download container images"
+  import_tasks: download_images.yml
+  when: offline_mode | bool
+  tags: 
+    - download
+    - download_images
+    - images
+
+- name: "Download additional tools"
+  import_tasks: download_tools.yml
+  tags: 
+    - download
+    - download_tools
+    - tools
+
+- name: "Generate download manifest"
+  import_tasks: generate_manifest.yml
+  tags: 
+    - download
+    - manifest

@@ -1,0 +1,50 @@
+# roles/base/tasks/firewall.yml
+---
+- name: Detect firewall service
+  shell: |
+    if systemctl is-active --quiet firewalld; then
+      echo "firewalld"
+    elif systemctl is-active --quiet ufw; then
+      echo "ufw"
+    elif systemctl is-active --quiet iptables; then
+      echo "iptables"
+    else
+      echo "none"
+    fi
+  register: firewall_service
+  changed_when: false
+  become: true
+  tags: ['firewall', 'detect']
+
+- name: Configure firewalld ports
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop: "{{ firewall_ports_tcp }}"
+  when: 
+    - firewall_service.stdout == "firewalld"
+    - configure_firewall | default(true)
+  become: true
+  notify: reload firewall
+  tags: ['firewall', 'firewalld']
+
+- name: Configure UFW ports
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ firewall_ports_tcp }}"
+  when: 
+    - firewall_service.stdout == "ufw"
+    - configure_firewall | default(true)
+  become: true
+  notify: reload firewall
+  tags: ['firewall', 'ufw']
+
+- name: Display firewall status
+  debug:
+    msg: "Detected firewall service: {{ firewall_service.stdout }}"
+  tags: ['firewall', 'status']
+

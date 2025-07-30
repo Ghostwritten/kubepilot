@@ -1,0 +1,112 @@
+# roles/base/defaults/main.yml
+---
+# ==============================================================================
+#                      GENERAL BEHAVIOR SWITCHES
+# ==============================================================================
+# Hostname configuration
+configure_hostname_resolution: true
+hosts_file_backup: true
+
+# System configuration switches
+configure_firewall: true
+configure_ntp: true
+configure_swap: true
+disable_swap: true # This switch controls whether to disable swap
+
+# Backup configuration
+backup_configs: true
+backup_suffix: ".{{ ansible_date_time.epoch }}.bak"
+
+
+# ==============================================================================
+#                      SECURITY CONFIGURATION
+# ==============================================================================
+# SELinux/AppArmor configuration
+selinux_state: permissive  # enforcing, permissive, disabled
+apparmor_state: disabled   # enabled, disabled
+
+# Firewall configuration
+firewall_ports_tcp:
+  - 22      # SSH
+  - 6443    # Kubernetes API server
+  - 2379    # etcd client
+  - 2380    # etcd peer
+  - 10250   # kubelet
+  - 10257   # kube-controller-manager (https, default in 1.20+)
+  - 10259   # kube-scheduler (https, default in 1.20+)
+
+firewall_ports_udp: []
+# Note: CNI plugins like Calico or Flannel might require additional ports (e.g., 8472/UDP for Flannel VXLAN)
+
+
+# ==============================================================================
+#                      SYSTEM-LEVEL TUNING
+# ==============================================================================
+# Kernel parameters (sysctl)
+kernel_params:
+  net.ipv4.ip_forward: 1
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.conf.all.forwarding: 1
+  net.ipv6.conf.all.forwarding: 1
+  fs.inotify.max_user_instances: 8192
+  fs.inotify.max_user_watches: 524288
+  fs.file-max: 2097152
+  vm.max_map_count: 262144
+  kernel.pid_max: 4194304
+  net.netfilter.nf_conntrack_max: 1000000
+
+# Kernel modules to load
+kernel_modules:
+  - br_netfilter
+  - overlay
+  - nf_conntrack
+  # The rest of your modules are fine, just keeping it short for the example.
+  # ...
+
+# --- NEW SECTION for systemd and PAM limits ---
+# PAM limits (managed via /etc/security/limits.conf or /etc/security/limits.d/)
+# These apply to user sessions.
+configure_pam_limits: true # Added a switch for this task
+system_limits:
+  - { domain: '*', type: 'soft', item: 'nofile', value: 65536 }
+  - { domain: '*', type: 'hard', item: 'nofile', value: 65536 }
+  - { domain: '*', type: 'soft', item: 'nproc', value: 32768 }
+  - { domain: '*', type: 'hard', item: 'nproc', value: 32768 }
+
+# Systemd global limits (managed via /etc/systemd/system.conf.d/)
+# These apply as defaults to all services managed by systemd. Crucial for Kubelet and Container Runtimes.
+configure_systemd_limits: true # This is the switch for our new task
+systemd_default_tasks_max: "infinity"
+systemd_default_limit_nofile: 1048576
+systemd_default_limit_nproc: 1048576
+
+
+# ==============================================================================
+#                      SOFTWARE & PACKAGES
+# ==============================================================================
+# Base packages to install on all nodes
+base_packages_common:
+  - curl
+  - wget
+  - unzip
+  - tar
+  - rsync
+  - socat
+  - conntrack-tools # Changed from 'conntrack' to the common package name
+  - ipset
+  - jq
+
+# The final list is a combination of common and OS-specific packages
+base_packages: "{{ base_packages_common + (base_packages_os_specific | default([])) }}"
+
+
+# ==============================================================================
+#                      SERVICES CONFIGURATION
+# ==============================================================================
+# Time synchronization
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+  - 2.pool.ntp.org
+  - 3.pool.ntp.org

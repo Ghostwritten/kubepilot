@@ -1,0 +1,12 @@
+---
+- name: Base system configuration for Kubernetes nodes
+  hosts: all 
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Run base role
+      import_role:
+        name: base
+      tags:
+        - base

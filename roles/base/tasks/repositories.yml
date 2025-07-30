@@ -1,0 +1,68 @@
+# roles/base/tasks/repositories.yml
+---
+- name: Configure package repositories for RedHat family
+  when: ansible_os_family == "RedHat"
+  tags: ['repo', 'yum']
+  block:
+    - name: Ensure backup directory for old repo files exists
+      ansible.builtin.file:
+        path: /etc/yum.repos.d/backup
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: Find existing .repo files to backup
+      ansible.builtin.find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+      register: repo_files_to_backup
+      become: true
+
+    - name: Move existing .repo files to backup directory
+      ansible.builtin.command: "mv {{ item.path }} /etc/yum.repos.d/backup/"
+      loop: "{{ repo_files_to_backup.files }}"
+      args:
+        creates: "/etc/yum.repos.d/backup/{{ item.path | basename }}"
+      become: true
+      when: repo_files_to_backup.matched > 0
+
+    - name: Configure local YUM repository from template
+      ansible.builtin.template:
+        src: local.repo.j2
+        dest: /etc/yum.repos.d/local.repo
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      notify: rebuild yum cache
+
+- name: Configure package repositories for SUSE family
+  when: ansible_os_family == "Suse"
+  tags: ['repo', 'zypper']
+  block:
+    - name: Disable all existing zypper repositories
+      community.general.zypper_repository:
+        name: '*'
+        state: absent
+      become: true
+      ignore_errors: true
+
+    - name: Configure local SUSE repository
+      community.general.zypper_repository:
+        name: kubepilot-local-suse
+        repo: "{{ repository.suse_url }}" 
+        state: present
+        enabled: true
+        autorefresh: true
+        priority: 90
+      become: true
+      notify: refresh zypper repos
+
+- name: Configure package sources for Debian family
+  when: ansible_os_family == "Debian"
+  tags: ['repo', 'apt']
+  block:
+    - name: (Placeholder) Configure local APT sources
+      ansible.builtin.debug:
+        msg: "APT source configuration tasks would be placed here, using '{{ repository.apt_url }}'"

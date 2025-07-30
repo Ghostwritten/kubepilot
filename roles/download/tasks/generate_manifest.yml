@@ -1,0 +1,44 @@
+# =============================================================================
+# roles/download/tasks/generate_manifest.yml - Download Manifest Generation
+# =============================================================================
+---
+- name: "Generate download manifest file"
+  template:
+    dest: "{{ offline_download_dir }}/download-manifest.yml"
+    mode: '0644'
+    content: |
+      # KubePilot Download Manifest
+      # Generated: {{ ansible_date_time.iso8601 }}
+      
+      kubepilot_version: "{{ kube_version }}"
+      download_date: "{{ ansible_date_time.iso8601 }}"
+      architecture: "{{ image_arch }}"
+      
+      components:
+        kubernetes:
+          version: "{{ kube_version }}"
+          binaries:
+            - kubeadm
+            - kubectl
+            - kubelet
+        
+        container_runtime:
+          containerd: "{{ containerd_version }}"
+          runc: "{{ runc_version }}"
+          nerdctl: "{{ nerdctl_version }}"
+          crictl: "{{ crictl_version }}"
+          cni_plugins: "{{ cni_version }}"
+        
+        networking:
+          calico: "v3.28.2"
+        
+        tools:
+          helm: "{{ helm_version }}"
+      
+      download_summary:
+        total_files: "{{ ansible_play_hosts | length }}"
+        offline_mode: {{ offline_mode }}
+        checksum_validation: {{ download_validate_checksums }}
+  tags: 
+    - manifest
+    - documentation

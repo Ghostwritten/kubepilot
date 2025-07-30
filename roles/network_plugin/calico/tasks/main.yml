@@ -1,0 +1,127 @@
+# roles/network_plugin/calico/tasks/main.yml
+---
+# =============================================================================
+#  Apply Calico CNI and install calicoctl CLI (using kubectl)
+#
+#  This role supports both Online and Offline installation modes based on
+#  the 'offline_mode' variable.
+#
+#  Actions:
+#  1. Download the Calico manifest (Online or Offline).
+#  2. Check if Calico is already deployed (Idempotency).
+#  3. Apply the manifest (replacing registry ONLY when needed).
+#  4. Wait for the Calico DaemonSet rollout.
+#  5. Install 'calicoctl' (Online or Offline).
+# =============================================================================
+
+- name: "Block for applying Calico manifest (delegated to a control plane node)"
+  run_once: true
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  block:
+
+    # -------------------------------------------------------------------------
+    # Download Manifests (Conditional: Online/Offline)
+    # -------------------------------------------------------------------------
+
+    - name: "Download Calico manifest (Offline mode)"
+      ansible.builtin.get_url:
+        url: "{{ files_repo }}/calico/{{ calico_version }}/calico.yaml"
+        dest: "/tmp/calico.yaml"
+        mode: '0644'
+      when: offline_mode | default(false)
+
+    - name: "Download Calico manifest (Online mode)"
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
+        dest: "/tmp/calico.yaml"
+        mode: '0644'
+        timeout: "{{ download_timeout | default(30) }}"
+      environment: "{{ proxy_env | default({}) }}"
+      register: download_calico_manifest
+      retries: "{{ download_retries | default(3) }}"
+      delay: "{{ download_delay | default(5) }}"
+      until: download_calico_manifest is succeeded
+      when: not (offline_mode | default(false))
+
+    # -------------------------------------------------------------------------
+    # Apply Manifest and Wait for Rollout
+    # -------------------------------------------------------------------------
+
+    - name: "Check if Calico DaemonSet 'calico-node' already exists via kubectl"
+      ansible.builtin.shell:
+        cmd: "kubectl get daemonset calico-node -n kube-system"
+      register: calico_ds_check
+      changed_when: false
+      failed_when: false # We check the result via rc (return code)
+
+    - name: "Debug: Show Calico installation status"
+      ansible.builtin.debug:
+        msg: "Calico DaemonSet 'calico-node' found. Skipping installation."
+      when: calico_ds_check.rc == 0
+
+    - name: "Apply Calico manifest if it is not already installed"
+      when: calico_ds_check.rc != 0
+      block:
+        #
+        # --- KEY CHANGE IS HERE ---
+        #
+        - name: "Replace image registry in Calico manifest"
+          ansible.builtin.replace:
+            path: /tmp/calico.yaml
+            regexp: 'docker.io/'
+            replace: "{{ registry_host }}/"
+          when: registry_host is defined and registry_host != ""
+
+        - name: "Apply Calico manifest using kubectl"
+          ansible.builtin.command:
+            cmd: "kubectl apply -f /tmp/calico.yaml"
+          register: calico_apply_result
+          changed_when: "'configured' in calico_apply_result.stdout or 'created' in calico_apply_result.stdout"
+
+        - name: "Wait for the Calico DaemonSet rollout to complete"
+          ansible.builtin.command:
+            cmd: "kubectl rollout status daemonset/calico-node -n kube-system --timeout=5m"
+          register: calico_rollout_status
+          changed_when: false
+          until: calico_rollout_status.rc == 0
+          retries: 5
+          delay: 15
+
+    - name: "Final confirmation of Calico installation"
+      ansible.builtin.debug:
+        msg: "Calico has been successfully installed and is operational."
+
+# -----------------------------------------------------------------------------
+# Install calicoctl CLI (Runs on all control plane nodes)
+# -----------------------------------------------------------------------------
+
+- name: "Install calicoctl (Offline mode) on control plane nodes"
+  ansible.builtin.get_url:
+    url: "{{ files_repo }}/calico/{{ calico_version }}/calicoctl"
+    dest: "/usr/local/bin/calicoctl"
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - inventory_hostname in groups['kube_control_plane']
+    - offline_mode | default(false)
+
+- name: "Install calicoctl (Online mode) on control plane nodes"
+  ansible.builtin.get_url:
+    # Note: Requires 'image_arch' variable (e.g., amd64, arm64) to be defined in inventory
+    url: "https://github.com/projectcalico/calico/releases/download/{{ calico_version }}/calicoctl-linux-{{ image_arch | default('amd64') }}"
+    dest: "/usr/local/bin/calicoctl"
+    owner: root
+    group: root
+    mode: '0755'
+    timeout: "{{ download_timeout | default(30) }}"
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_calicoctl
+  retries: "{{ download_retries | default(3) }}"
+  delay: "{{ download_delay | default(5) }}"
+  until: download_calicoctl is succeeded
+  when:
+    - inventory_hostname in groups['kube_control_plane']
+    - not (offline_mode | default(false))

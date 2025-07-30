@@ -1,0 +1,37 @@
+# roles/container_engine/crictl/tasks/main.yml
+---
+- name: Set crictl download paths and filename
+  ansible.builtin.set_fact:
+    crictl_archive_name: "crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
+    crictl_tmp_path: "/tmp/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
+    crictl_download_url_resolved: >-
+      {{
+        (offline_mode | default(false)) | ternary(
+          files_repo + '/crictl-' + crictl_version + '-linux-' + image_arch + '.tar.gz',
+          'https://github.com/kubernetes-sigs/cri-tools/releases/download/' + crictl_version + '/crictl-' + crictl_version + '-linux-' + image_arch + '.tar.gz'
+        )
+      }}
+
+- name: Download crictl archive (offline or online)
+  ansible.builtin.get_url:
+    url: "{{ crictl_download_url_resolved }}"
+    dest: "{{ crictl_tmp_path }}"
+    mode: '0644'
+    checksum: "{{ crictl_checksum | default(omit) }}"
+  retries: 3
+  delay: 5
+  # Apply proxy settings only when in online mode
+  environment: "{{ (offline_mode | default(false)) | ternary({}, proxy_env) }}"
+
+- name: Extract crictl to /usr/local/bin
+  ansible.builtin.unarchive:
+    src: "{{ crictl_tmp_path }}"
+    dest: "/usr/local/bin"
+    remote_src: true
+    creates: "/usr/local/bin/crictl"
+
+- name: Remove downloaded crictl archive
+  ansible.builtin.file:
+    path: "{{ crictl_tmp_path }}"
+    state: absent
+  when: cleanup_enabled | default(true)

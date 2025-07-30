@@ -1,0 +1,37 @@
+# roles/base/tasks/time.yml
+---
+
+- name: Ensure NTP service package is installed
+  package:
+    name: "{{ ntp_package_name }}" 
+    state: present
+  become: true
+  when: ntp_package_name is defined 
+  tags: ['time', 'install']
+
+- name: Configure NTP servers
+  template:
+    src: "{{ ntp_config_template }}"
+    dest: "{{ ntp_config_file }}"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: "{{ backup_configs | default(true) }}"
+  become: true
+  notify: "restart {{ ntp_service }}"
+  tags: ['time', 'config']
+
+- name: Enable and start NTP service
+  systemd:
+    name: "{{ ntp_service }}"
+    enabled: true
+    state: started
+  become: true
+  tags: ['time', 'service']
+
+- name: Verify time synchronization
+  command: timedatectl status
+  register: time_status
+  changed_when: false
+  become: true
+  tags: ['time', 'verify']

@@ -1,0 +1,209 @@
+# =============================================================================
+# KubePilot - Advanced Kubernetes Cluster Deployment Configuration
+# =============================================================================
+# Project: kubepilot - Next-generation Kubernetes cluster automation
+# Purpose: Surpass kubespray with enhanced features and simplified management
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Global Settings & Feature Flags
+# -----------------------------------------------------------------------------
+kubepilot_version: "1.0.0"
+kubepilot_build_date: "{{ ansible_date_time.date }}"
+
+offline_mode: true
+http_server: "http://192.168.22.130"
+
+http_proxy: "http://192.168.21.101:7890"
+https_proxy: "http://192.168.21.101:7890"
+no_proxy: "10.0.0.0/8,192.168.16.0/20,localhost,127.0.0.1,registry.ocp.local,.svc,.svc.cluster-27,.coding.net,.tencentyun.com,.myqcloud.com,harbor.bsgchina.com"
+
+# -----------------------------------------------------------------------------
+# Core Kubernetes Configuration
+# -----------------------------------------------------------------------------
+# Kubernetes binary version - supports latest stable releases
+kube_version: "1.31.10"
+kube_version_major_minor: "{{ kube_version.split('.')[0] }}.{{ kube_version.split('.')[1] }}"
+kube_version_full: "1.31.10-150500.1.1"
+
+# Installation directories
+bin_dir: /usr/local/bin
+k8s_config_dir: /etc/kubernetes
+k8s_manifests_dir: /etc/kubernetes/manifests
+
+# Architecture and platform settings
+image_arch: "amd64"
+k8s_download_arch: "x86_64"
+alt_arch_mapping:
+  amd64: "x86_64"
+  arm64: "aarch64"
+
+# -----------------------------------------------------------------------------
+# Container Runtime and Tools Versions
+# -----------------------------------------------------------------------------
+# Container runtime components
+containerd_version: "2.1.3"
+containerd_use_systemd_cgroup: true
+containerd_max_container_log_line_size: 16384
+containerd_storage_dir: "/var/lib/containerd"
+containerd_state_dir: "/run/containerd"
+
+# Network plugins
+cni_version: "v1.7.1"
+cni_download_dir: "/opt/cni"
+
+# Container runtime component versions
+runc_version: "1.2.4"
+nerdctl_version: "2.1.2"
+crictl_version: "v1.33.0"
+
+# Additional tools and components
+helm_version: "v3.16.2"
+etcd_version: "3.5.15-0"
+coredns_version: "v1.11.1"
+
+# Netowork plugin
+calico_version: "v3.28.2"
+
+
+  # Container image settings
+pod_infra_image_repo: "{{ kube_image_repo }}/pause"
+pod_infra_image_tag: '3.9'
+
+# -----------------------------------------------------------------------------
+# Download Sources and Mirrors
+# -----------------------------------------------------------------------------
+# Primary Kubernetes download source (official or mirror)
+kube_download_mirror: "https://dl.k8s.io"
+# Alternative mirror for China users:
+# kube_download_mirror: "https://mirrors.aliyun.com/kubernetes"
+
+# Image registry configuration
+kube_image_repo: "registry.k8s.io"
+registry_host: "registry.k8s.local"
+
+# -----------------------------------------------------------------------------
+# Offline Deployment Configuration
+# -----------------------------------------------------------------------------
+offline_k8s_download_dir: "{{ playbook_dir }}/../download"
+
+# Local file server for offline installations
+
+
+# Local package repositories for offline mode
+#yum_repo: "{{ http_server }}/rpms"
+#ubuntu_repo: "{{ http_server }}/debs"
+repository:
+  yum_url: "{{ http_server }}/rpms"
+  apt_url: "{{ http_server }}/debs"
+  suse_url: "{{ http_server }}/zypper"
+
+# Offline download URLs
+files_repo: "{{ http_server }}/files"
+kubeadm_download_url: "{{ files_repo }}/kubeadm"
+kubectl_download_url: "{{ files_repo }}/kubectl"
+kubelet_download_url: "{{ files_repo }}/kubelet"
+#cni_download_url: "{{ files_repo }}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
+crictl_download_url: "{{ files_repo }}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
+runc_download_url: "{{ files_repo }}/runc.{{ image_arch }}"
+containerd_download_url: "{{ files_repo }}/containerd-{{ containerd_version }}-linux-{{ image_arch }}.tar.gz"
+nerdctl_download_url: "{{ files_repo }}/nerdctl-{{ nerdctl_version }}-linux-{{ image_arch }}.tar.gz"
+
+# -----------------------------------------------------------------------------
+# Network Proxy Configuration
+# -----------------------------------------------------------------------------
+# HTTP/HTTPS proxy settings for downloads acceleration
+
+# Internal networks that should bypass proxy
+
+# Environment variables for proxy configuration
+proxy_env:
+  http_proxy: "{{ http_proxy | default('') }}"
+  https_proxy: "{{ https_proxy | default('') }}"
+  no_proxy: "{{ no_proxy | default('') }}"
+
+# -----------------------------------------------------------------------------
+# Container Registry Configuration
+# -----------------------------------------------------------------------------
+# Insecure registries (for development/testing)
+containerd_insecure_registries:
+  "registry.k8s.local": "http://registry.k8s.local"
+
+# Registry mirrors for improved download performance
+containerd_registries_mirrors:
+  - prefix: registry.k8s.local
+    skip_verify: true
+    mirrors:
+      - host: https://registry.k8s.local
+        capabilities: ["pull", "resolve"]
+        skip_verify: true
+  - prefix: docker.io
+    mirrors:
+      - host: https://docker.mirrors.ustc.edu.cn
+        capabilities: ["pull", "resolve"]
+      - host: https://registry.docker-cn.com
+        capabilities: ["pull", "resolve"]
+
+# Registry authentication (uncomment and configure as needed)
+# containerd_registry_auth:
+#   - registry: registry.k8s.local
+#     username: admin
+#     password: harbor12345
+#   - registry: docker.io
+#     username: your-username
+#     password: your-password
+
+# -----------------------------------------------------------------------------
+# Kubernetes Cluster Network Configuration
+# -----------------------------------------------------------------------------
+# Pod subnet (CIDR notation)
+kube_pod_cidr: "10.244.0.0/16"
+
+# Service subnet (CIDR notation)
+kube_service_cidr: "10.96.0.0/12"
+
+# API server advertise address (dynamically set to first control plane node)
+kube_apiserver_advertise_address: "{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}"
+
+# Additional network settings
+kube_apiserver_port: 6443
+kube_apiserver_bind_port: 6443
+
+# DNS configuration
+dns_domain: cluster.local
+dns_servers:
+  - 8.8.8.8
+  - 8.8.4.4
+  - 114.114.114.114
+
+# -----------------------------------------------------------------------------
+# System Configuration
+# -----------------------------------------------------------------------------
+# Python interpreter path (prevents interpreter discovery warnings)
+ansible_python_interpreter: /usr/bin/python3.9
+
+# System service configuration
+systemd_dir: /etc/systemd/system
+system_namespace: kube-system
+
+
+# Feature flags
+enable_metrics_server: true
+enable_ingress_nginx: true
+enable_cert_manager: false
+enable_prometheus: false
+enable_grafana: false
+
+# Backup and recovery
+backup_enabled: false
+backup_schedule: "0 2 * * *"  # Daily at 2 AM
+backup_retention_days: 7
+
+# Security settings
+rbac_enabled: true
+network_policy_enabled: false
+pod_security_policy_enabled: false
+
+# Logging
+log_level: "info"  # debug, info, warn, error
+audit_log_enabled: false

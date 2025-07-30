@@ -1,0 +1,101 @@
+# roles/base/defaults/main.yml
+---
+# Hostname configuration
+configure_hostname_resolution: true
+hosts_file_backup: true
+
+# System configuration
+configure_firewall: true
+configure_ntp: true
+configure_swap: true
+disable_swap: true
+
+# SELinux/AppArmor configuration
+selinux_state: permissive  # enforcing, permissive, disabled
+apparmor_state: disabled   # enabled, disabled
+
+# Kernel parameters
+kernel_params:
+  net.ipv4.ip_forward: 1
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.conf.all.forwarding: 1
+  net.ipv6.conf.all.forwarding: 1
+  fs.inotify.max_user_instances: 8192
+  fs.inotify.max_user_watches: 524288
+  fs.file-max: 2097152
+  vm.max_map_count: 262144
+  kernel.pid_max: 4194304
+  net.netfilter.nf_conntrack_max: 1000000
+
+# Kernel modules
+kernel_modules:
+  - br_netfilter
+  - overlay
+  - nf_conntrack
+  - iptable_filter
+  - iptable_nat
+  - nf_nat
+  - x_tables
+  - ip_vs
+  - ip_vs_rr
+  - ip_vs_wrr
+  - ip_vs_sh
+
+# Base packages to install
+base_packages_common:
+  - curl
+  - wget
+  - unzip
+  - tar
+  - rsync
+  - socat
+  - conntrack
+  - ipset
+  - jq
+
+# OS-specific package lists (defined in vars/)
+base_packages: "{{ base_packages_common + base_packages_os_specific | default([]) }}"
+
+# Firewall configuration
+firewall_ports_tcp:
+  - 22      # SSH
+  - 6443    # Kubernetes API server
+  - 2379    # etcd client
+  - 2380    # etcd peer
+  - 10250   # kubelet
+  - 10251   # kube-scheduler
+  - 10252   # kube-controller-manager
+  - 10255   # kubelet read-only
+
+firewall_ports_udp: []
+
+# Time synchronization
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+  - 2.pool.ntp.org
+  - 3.pool.ntp.org
+
+# System limits
+system_limits:
+  - domain: '*'
+    type: soft
+    item: nofile
+    value: 65536
+  - domain: '*'
+    type: hard
+    item: nofile
+    value: 65536
+  - domain: '*'
+    type: soft
+    item: nproc
+    value: 32768
+  - domain: '*'
+    type: hard
+    item: nproc
+    value: 32768
+
+# Backup configuration
+backup_configs: true
+backup_suffix: ".{{ ansible_date_time.epoch }}.bak"

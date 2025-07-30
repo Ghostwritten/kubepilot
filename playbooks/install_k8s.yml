@@ -1,0 +1,27 @@
+# playbooks/install_k8s.yml
+# =============================================================================
+#
+#  Kubernetes Cluster Provisioning Playbook
+#
+#  This playbook bootstraps a complete Kubernetes cluster. It is divided into
+#  logical plays to configure the control plane and worker nodes separately.
+#
+#  Usage:
+#    ansible-playbook -i <your_inventory_file> playbooks/install_k8s.yml
+#
+#  Requires inventory groups:
+#    - kube_control_plane: The master nodes.
+#    - kube_node: The worker nodes.
+#
+# =============================================================================
+---
+- name: "Provision Kubernetes Control Plane" 
+  hosts: all
+  become: true
+
+  tasks:
+    - name: "Run Kubernetes installation and configuration role"
+      import_role:
+        name: kubernetes
+      tags: 
+        - install_k8s 

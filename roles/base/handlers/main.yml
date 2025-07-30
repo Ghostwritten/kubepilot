@@ -1,0 +1,70 @@
+# roles/base/handlers/main.yml
+---
+- name: reload sysctl
+  command: sysctl --system
+  become: true
+
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+  become: true
+
+# --- NTP Handlers ---
+- name: restart chronyd
+  systemd:
+    name: chronyd
+    state: restarted
+  become: true
+  listen: restart chronyd
+
+- name: restart systemd-timesyncd
+  systemd:
+    name: systemd-timesyncd
+    state: restarted
+  become: true
+  listen: restart systemd-timesyncd 
+
+# --- Firewall Handlers ---
+- name: reload firewalld
+  systemd:
+    name: firewalld
+    state: reloaded
+  become: true
+  listen: reload firewall
+
+- name: restart ufw
+  ufw:
+    state: reloaded
+  become: true
+  listen: reload firewall
+
+- name: validate hostname resolution
+  shell: getent hosts {{ item }}
+  loop: "{{ groups['all'] }}"
+  changed_when: false
+  failed_when: false
+  become: true
+  listen: validate hostname resolution
+
+- name: refresh zypper repos
+  when: ansible_os_family == "Suse"
+  community.general.zypper:
+    name: '*'
+    state: refreshed
+  become: true
+
+- name: rebuild yum cache
+  when: ansible_os_family == "RedHat"
+  become: true
+  block:
+    - name: Clean old YUM cache
+      ansible.builtin.command: yum clean all
+      args:
+        warn: false
+      changed_when: false
+
+    - name: Make new YUM cache
+      ansible.builtin.command: yum makecache
+      args:
+        warn: false
+      changed_when: false

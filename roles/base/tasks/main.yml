@@ -1,0 +1,57 @@
+# roles/base/tasks/main.yml
+---
+- name: Include OS-specific variables
+  include_vars: "{{ ansible_os_family | lower }}.yml"
+  tags: ['base', 'vars']
+
+
+- name: Gather package facts
+  package_facts:
+    manager: auto
+  tags: ['base', 'facts']
+
+- name: Configure hostname resolution
+  import_tasks: hostname.yml
+  tags: ['base', 'hostname']
+
+- name: Configure system prerequisites
+  import_tasks: system.yml
+  tags: ['base', 'system']
+
+- name: Configure kernel parameters
+  import_tasks: kernel.yml
+  tags: ['base', 'kernel']
+
+- name: Load kernel modules
+  import_tasks: modules.yml
+  tags: ['base', 'modules']
+
+- name: Configure firewall
+  import_tasks: firewall.yml
+  when: configure_firewall | default(true)
+  tags: ['base', 'firewall']
+
+- name: Configure SELinux/AppArmor
+  import_tasks: security.yml
+  tags: ['base', 'security']
+
+- name: Install base packages
+  import_tasks: packages.yml
+  tags: ['base', 'packages']
+
+- name: Configure package repositories
+  import_tasks: repositories.yml
+  tags: ['base', 'repo']
+
+- name: Configure time synchronization
+  import_tasks: time.yml
+  when: configure_ntp | default(true)
+  tags: ['base', 'time']
+
+- name: Configure swap
+  import_tasks: swap.yml
+  tags: ['base', 'swap']
+
+- name: Apply system configuration
+  meta: flush_handlers
+  tags: ['base']

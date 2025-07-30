@@ -1,0 +1,37 @@
+# roles/container_engine/nerdctl/tasks/main.yml
+---
+- name: Set nerdctl download paths and filename
+  ansible.builtin.set_fact:
+    nerdctl_archive_name: "nerdctl-{{ nerdctl_version }}-linux-{{ image_arch }}.tar.gz"
+    nerdctl_tmp_path: "/tmp/nerdctl-{{ nerdctl_version }}-linux-{{ image_arch }}.tar.gz"
+    nerdctl_download_url_resolved: >-
+      {{
+        (offline_mode | default(false)) | ternary(
+          files_repo + '/nerdctl-' + nerdctl_version + '-linux-' + image_arch + '.tar.gz',
+          'https://github.com/containerd/nerdctl/releases/download/v' + nerdctl_version + '/nerdctl-' + nerdctl_version + '-linux-' + image_arch + '.tar.gz'
+        )
+      }}
+
+- name: Download nerdctl archive (offline or online)
+  ansible.builtin.get_url:
+    url: "{{ nerdctl_download_url_resolved }}"
+    dest: "{{ nerdctl_tmp_path }}"
+    mode: '0644'
+    checksum: "{{ nerdctl_checksum | default(omit) }}"
+  retries: 3
+  delay: 5
+  # Apply proxy settings only when in online mode
+  environment: "{{ (offline_mode | default(false)) | ternary({}, proxy_env) }}"
+
+- name: Extract nerdctl to /usr/local/bin
+  ansible.builtin.unarchive:
+    src: "{{ nerdctl_tmp_path }}"
+    dest: "/usr/local/bin"
+    remote_src: true
+    creates: "/usr/local/bin/nerdctl"
+
+- name: Remove downloaded nerdctl archive
+  ansible.builtin.file:
+    path: "{{ nerdctl_tmp_path }}"
+    state: absent
+  when: cleanup_enabled | default(true)

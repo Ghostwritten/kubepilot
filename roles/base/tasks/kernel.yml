@@ -1,0 +1,58 @@
+# roles/base/tasks/kernel.yml
+---
+- name: Create sysctl configuration directory
+  file:
+    path: /etc/sysctl.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+  tags: ['kernel', 'sysctl']
+
+- name: Backup existing sysctl configuration
+  copy:
+    src: /etc/sysctl.d/99-kubernetes-cri.conf
+    dest: "/etc/sysctl.d/99-kubernetes-cri.conf{{ backup_suffix }}"
+    remote_src: true
+    mode: '0644'
+  when: 
+    - backup_configs | default(true)
+    - ansible_check_mode is not defined
+  become: true
+  ignore_errors: true
+  tags: ['kernel', 'backup']
+
+- name: Configure Kubernetes kernel parameters
+  template:
+    src: 99-kubernetes-cri.conf.j2
+    dest: /etc/sysctl.d/99-kubernetes-cri.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: "{{ backup_configs | default(true) }}"
+  become: true
+  notify: reload sysctl
+  tags: ['kernel', 'sysctl']
+
+- name: Set kernel parameters immediately
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+    ignoreerrors: true
+  loop: "{{ kernel_params | dict2items }}"
+  become: true
+  tags: ['kernel', 'sysctl', 'immediate']
+
+- name: Verify critical kernel parameters
+  shell: sysctl {{ item.key }}
+  loop: "{{ kernel_params | dict2items }}"
+  register: sysctl_check
+  changed_when: false
+  failed_when: 
+    - sysctl_check.rc != 0
+    - item.key in ['net.ipv4.ip_forward', 'net.bridge.bridge-nf-call-iptables']
+  become: true
+  tags: ['kernel', 'verify']

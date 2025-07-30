@@ -1,0 +1,19 @@
+# =============================================================================
+# roles/download/tasks/download_tools.yml - Additional Tools Download
+# =============================================================================
+---
+- name: "Download additional operational tools"
+  get_url:
+    url: "{{ download_urls.helm }}"
+    dest: "{{ offline_files_dir }}/helm-{{ helm_version }}-linux-{{ image_arch }}.tar.gz"
+    mode: '0644'
+    timeout: "{{ download_timeout }}"
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_helm
+  retries: "{{ download_retries }}"
+  delay: "{{ download_delay }}"
+  until: download_helm is succeeded
+  tags: 
+    - download_tools
+    - helm
+

@@ -1,0 +1,31 @@
+---
+- name: Download and install container runtime binaries (offline aware)
+  hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Include runc install role
+      import_role:
+        name: container_engine/runc
+      tags: runc
+
+    - name: Include nerdctl install role
+      import_role:
+        name: container_engine/nerdctl
+      tags: nerdctl
+
+    - name: Include CNI plugins install role
+      import_role:
+        name: container_engine/cni_plugins
+      tags: cni_plugins
+
+    - name: Include crictl install role
+      import_role:
+        name: container_engine/crictl
+      tags: crictl
+
+    - name: Include containerd install role
+      import_role:
+        name: container_engine/containerd
+      tags: containerd

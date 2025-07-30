@@ -1,0 +1,20 @@
+# roles/base/vars/redhat.yml
+---
+base_packages_os_specific:
+  - yum-utils
+  - device-mapper-persistent-data
+  - lvm2
+  - iptables-services
+  - net-tools
+  - bind-utils
+  - chrony
+
+services_to_disable:
+  - firewalld
+  - NetworkManager
+
+hostname_file: /etc/hostname
+ntp_package_name: chrony
+ntp_service: chronyd
+ntp_config_file: /etc/chrony.conf
+ntp_config_template: chrony.conf.j2

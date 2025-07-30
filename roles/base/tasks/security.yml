@@ -1,0 +1,41 @@
+# roles/base/tasks/security.yml
+---
+- name: Check SELinux status
+  command: sestatus
+  register: selinux_status
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  become: true
+  tags: ['security', 'selinux']
+
+- name: Configure SELinux state
+  selinux:
+    policy: targeted
+    state: "{{ selinux_state }}"
+  when: 
+    - ansible_os_family == "RedHat"
+    - selinux_status.rc == 0
+  become: true
+  tags: ['security', 'selinux']
+
+- name: Check AppArmor status
+  command: aa-status
+  register: apparmor_status
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  become: true
+  tags: ['security', 'apparmor']
+
+- name: Disable AppArmor
+  systemd:
+    name: apparmor
+    enabled: false
+    state: stopped
+  when: 
+    - ansible_os_family == "Debian"
+    - apparmor_state == "disabled"
+    - apparmor_status.rc == 0
+  become: true
+  tags: ['security', 'apparmor']

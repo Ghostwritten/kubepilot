@@ -1,0 +1,35 @@
+---
+- name: "Setup Kubernetes official YUM repository" 
+  copy:
+    dest: /etc/yum.repos.d/kubernetes.repo
+    content: |
+      [kubernetes]
+      name=Kubernetes
+      baseurl=https://pkgs.k8s.io/core:/stable:/v{{ kube_version_major_minor }}/rpm/
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://pkgs.k8s.io/core:/stable:/v{{ kube_version_major_minor }}/rpm/repodata/repomd.xml.key
+    mode: '0644'
+  tags: download_k8s
+
+- name: "Create a directory to store Kubernetes RPM offline packages"
+  file:
+    path: "{{ offline_k8s_download_dir }}/rpms/kubernetes"
+    state: directory
+    mode: '0755'
+  tags: download_k8s
+
+- name: "Download Kubernetes RPMs with dependencies"
+  command: >
+    dnf download --resolve --arch={{ k8s_download_arch }}
+    kubeadm-{{ kube_version_full }}
+    kubectl-{{ kube_version_full }}
+    kubelet-{{ kube_version_full }}
+  args:
+    chdir: "{{ offline_k8s_download_dir }}/rpms/kubernetes"
+  environment: "{{ proxy_env | default({}) }}"
+  register: download_k8s_result
+  retries: 3
+  delay: 5
+  until: download_k8s_result.rc == 0
+  tags: download_k8s

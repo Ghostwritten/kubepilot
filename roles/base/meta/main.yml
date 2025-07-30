@@ -1,0 +1,4 @@
+# roles/base/meta/main.yml
+---
+galaxy_info:
+  role

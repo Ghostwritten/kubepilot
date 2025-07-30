@@ -1,0 +1,6 @@
+# roles/container_engine/containerd/handlers/main.yml
+- name: restart containerd
+  systemd:
+    name: containerd
+    state: restarted
+    enabled: yes
