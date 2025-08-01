@@ -1,141 +1,49 @@
-# roles/kubernetes/tasks/main.yml
-#
-# This role handles the installation of Kubernetes components (kubelet, kubeadm, kubectl)
-# and the initialization of the cluster on the control plane nodes.
-#
-
-- name: Check if Kubernetes components are already installed
-  package_facts:
-    manager: auto
-
-# -----------------------------------------------------------------------------
-# Install Kubernetes Binaries (kubelet, kubeadm, kubectl)
-# -----------------------------------------------------------------------------
-
-- name: Install kubelet and kubeadm on all nodes
-  yum:
-    name:
-      - "kubelet-{{ kube_version_full }}"
-      - "kubeadm-{{ kube_version_full }}"
-    state: present
-    disable_gpg_check: yes
-  # The 'when' condition below makes this task idempotent and more efficient than
-  # running 'rpm -q' in a separate shell task. Ansible checks if the package
-  # is already present at the specified version.
-  when: "'kubelet' not in ansible_facts.packages or ansible_facts.packages['kubelet'][0].version != kube_version_full"
-
-- name: Install kubectl on control plane nodes
-  yum:
-    name: "kubectl-{{ kube_version_full }}"
-    state: present
-  when:
-    - inventory_hostname in groups['kube_control_plane']
-    - "'kubectl' not in ansible_facts.packages or ansible_facts.packages['kubectl'][0].version != kube_version_full"
-
-- name: Ensure kubelet service is started and enabled
-  systemd:
-    name: kubelet
-    state: started
-    enabled: yes
-    daemon_reload: yes
-
-# -----------------------------------------------------------------------------
-# Initialize Kubernetes Cluster
-# This section runs ONLY on the first control plane node.
-# -----------------------------------------------------------------------------
-
-- name: Create kubeadm configuration file on the first control plane node
-  template:
-    src: kubeadm-config.yaml.j2
-    dest: /tmp/kubeadm-config.yaml
-    mode: '0640'
-  when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeadm_init
-
-- name: Initialize Kubernetes cluster with kubeadm
-  command: kubeadm init --config /tmp/kubeadm-config.yaml --upload-certs
-  args:
-    creates: /etc/kubernetes/admin.conf
-  register: kubeadm_init_result
-  when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeadm_init
-
-- name: Display kubeadm init output for debugging
+# =============================================================================
+# roles/kubernetes/tasks/main.yml - Main Kubernetes Tasks
+# =============================================================================
+---
+- name: "Display Kubernetes phase information"
   debug:
-    var: kubeadm_init_result.stdout_lines
-  when:
-    - inventory_hostname == groups['kube_control_plane'][0]
-    - kubeadm_init_result.changed
-  tags: kubeadm_init
+    msg: |
+      🚀 KubePilot Kubernetes Phase
+      =============================
+      Kubernetes Version: {{ kube_version }}
+      Control Plane Endpoint: {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}
+  tags: always
 
-# -----------------------------------------------------------------------------
-# Configure Kubeconfig for Users
-# This section runs ONLY on the first control plane node.
-# -----------------------------------------------------------------------------
+- name: "Install Kubernetes components"
+  import_tasks: install_kubernetes.yml
+  tags:
+    - kubernetes
+    - install
+    - binaries
 
-- name: Create .kube directory for the ansible user
-  file:
-    path: "/home/{{ ansible_user }}/.kube"
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: '0755'
+- name: "Initialize Kubernetes cluster"
+  import_tasks: initialize_cluster.yml
   when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeconfig
+  tags:
+    - kubernetes
+    - initialize
+    - controlplane
 
-- name: Copy admin.conf to the ansible user's .kube directory
-  copy:
-    src: /etc/kubernetes/admin.conf
-    dest: "/home/{{ ansible_user }}/.kube/config"
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: '0644'
-    remote_src: yes
+- name: "Configure kubeconfig for users"
+  import_tasks: configure_kubeconfig.yml
   when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeconfig
+  tags:
+    - kubernetes
+    - kubeconfig
 
-- name: Create .kube directory for the root user
-  file:
-    path: /root/.kube
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
+- name: "Enable shell completions"
+  import_tasks: enable_completion.yml
   when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeconfig
+  tags:
+    - kubernetes
+    - completion
 
-- name: Copy admin.conf to the root user's .kube directory
-  copy:
-    src: /etc/kubernetes/admin.conf
-    dest: /root/.kube/config
-    owner: root
-    group: root
-    mode: '0600'
-    remote_src: yes
-  when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeconfig
-
-# -----------------------------------------------------------------------------
-# Enable Shell Completions
-# This section runs ONLY on the first control plane node.
-# -----------------------------------------------------------------------------
-
-- name: Enable kubectl bash completion for the ansible user
-  lineinfile:
-    path: "/home/{{ ansible_user }}/.bashrc"
-    line: 'source <(kubectl completion bash)'
-    regexp: '^source <\(kubectl completion bash\)'
-    state: present
-    create: yes
-  when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeconfig
-
-- name: Enable kubectl bash completion for the root user
-  lineinfile:
-    path: "/root/.bashrc"
-    line: 'source <(kubectl completion bash)'
-    regexp: '^source <\(kubectl completion bash\)'
-    state: present
-    create: yes
-  when: inventory_hostname == groups['kube_control_plane'][0]
-  tags: kubeconfig
+- name: "Join additional control plane nodes"
+  import_tasks: join_control_plane.yml
+  when: inventory_hostname in groups['kube_control_plane'] and inventory_hostname != groups['kube_control_plane'][0]
+  tags:
+    - kubernetes
+    - join
+    - controlplane

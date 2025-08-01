@@ -1,9 +1,12 @@
 # roles/base/tasks/main.yml
 ---
+- name: Set node type specific configuration
+  set_fact:
+    skip_kubernetes_config: "{{ 'bastion' in group_names }}"
+
 - name: Include OS-specific variables
   include_vars: "{{ ansible_os_family | lower }}.yml"
   tags: ['base', 'vars']
-
 
 - name: Gather package facts
   package_facts:
@@ -20,15 +23,19 @@
 
 - name: Configure kernel parameters
   import_tasks: kernel.yml
+  when: not skip_kubernetes_config
   tags: ['base', 'kernel']
 
 - name: Load kernel modules
   import_tasks: modules.yml
+  when: not skip_kubernetes_config
   tags: ['base', 'modules']
 
 - name: Configure firewall
   import_tasks: firewall.yml
-  when: configure_firewall | default(true)
+  when: 
+    - configure_firewall | default(true)
+    - not skip_kubernetes_config
   tags: ['base', 'firewall']
 
 - name: Configure SELinux/AppArmor
@@ -37,19 +44,24 @@
 
 - name: Install base packages
   import_tasks: packages.yml
+  when: not skip_kubernetes_config
   tags: ['base', 'packages']
 
 - name: Configure package repositories
   import_tasks: repositories.yml
+  when: not skip_kubernetes_config
   tags: ['base', 'repo']
 
 - name: Configure time synchronization
   import_tasks: time.yml
-  when: configure_ntp | default(true)
+  when: 
+    - configure_ntp | default(true)
+    - not skip_kubernetes_config
   tags: ['base', 'time']
 
 - name: Configure swap
   import_tasks: swap.yml
+  when: not skip_kubernetes_config
   tags: ['base', 'swap']
 
 - name: Apply system configuration

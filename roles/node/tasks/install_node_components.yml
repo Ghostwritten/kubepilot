@@ -1,0 +1,30 @@
+# =============================================================================
+# roles/node/tasks/install_node_components.yml - Install Worker Node Components
+# =============================================================================
+---
+- name: "Check if Kubernetes node components are already installed"
+  package_facts:
+    manager: auto
+
+- name: "Install kubelet and kubeadm on worker nodes"
+  yum:
+    name:
+      - "kubelet-{{ kube_version_full }}"
+      - "kubeadm-{{ kube_version_full }}"
+    state: present
+    disable_gpg_check: yes
+  when: "'kubelet' not in ansible_facts.packages or ansible_facts.packages['kubelet'][0].version != kube_version_full"
+
+- name: "Ensure kubelet service is started and enabled"
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: "Display installed Kubernetes components"
+  debug:
+    msg: |
+      Kubernetes components installed on {{ inventory_hostname }}:
+      - kubelet: {{ ansible_facts.packages['kubelet'][0].version if 'kubelet' in ansible_facts.packages else 'Not installed' }}
+      - kubeadm: {{ ansible_facts.packages['kubeadm'][0].version if 'kubeadm' in ansible_facts.packages else 'Not installed' }}

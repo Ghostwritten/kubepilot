@@ -16,7 +16,7 @@
 # =============================================================================
 ---
 - name: "Provision Kubernetes Control Plane" 
-  hosts: all
+  hosts: kube_control_plane
   become: true
 
   tasks:
@@ -24,4 +24,4 @@
       import_role:
         name: kubernetes
       tags: 
-        - install_k8s 
+        - install_k8s

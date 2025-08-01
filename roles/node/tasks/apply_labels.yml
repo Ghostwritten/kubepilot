@@ -1,0 +1,44 @@
+# =============================================================================
+# roles/node/tasks/apply_labels.yml - Apply Node Labels
+# =============================================================================
+---
+- name: "Apply standard worker node labels"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  shell: |
+    kubectl label nodes {{ inventory_hostname }} \
+      node-role.kubernetes.io/worker= \
+      node-role.kubernetes.io/node= \
+      kubernetes.io/role=worker \
+      --overwrite
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: not node_already_joined | default(false)
+  register: standard_labels_result
+  failed_when: false
+
+- name: "Apply custom node labels (if defined)"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  shell: |
+    kubectl label nodes {{ inventory_hostname }} {{ item.key }}={{ item.value }} --overwrite
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  with_dict: "{{ node_labels | default({}) }}"
+  when: 
+    - not node_already_joined | default(false)
+    - node_labels is defined
+  register: custom_labels_result
+  failed_when: false
+
+- name: "Display applied node labels"
+  debug:
+    msg: |
+      🏷️  Node labels applied to {{ inventory_hostname }}:
+      - node-role.kubernetes.io/worker
+      - node-role.kubernetes.io/node  
+      - kubernetes.io/role=worker
+      {% if node_labels is defined %}
+      {% for key, value in node_labels.items() %}
+      - {{ key }}={{ value }}
+      {% endfor %}
+      {% endif %}
+  when: not node_already_joined | default(false) 

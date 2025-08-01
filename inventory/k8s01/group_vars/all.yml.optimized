@@ -11,9 +11,11 @@
 kubepilot_version: "1.0.0"
 kubepilot_build_date: "{{ ansible_date_time.date }}"
 
+# Offline deployment configuration
 offline_mode: true
 http_server: "http://192.168.22.130"
 
+# Proxy configuration for online mode
 http_proxy: "http://192.168.21.101:7890"
 https_proxy: "http://192.168.21.101:7890"
 no_proxy: "10.0.0.0/8,192.168.16.0/20,localhost,127.0.0.1,registry.ocp.local,.svc,.svc.cluster-27,.coding.net,.tencentyun.com,.myqcloud.com,harbor.bsgchina.com"
@@ -62,11 +64,10 @@ helm_version: "v3.16.2"
 etcd_version: "3.5.15-0"
 coredns_version: "v1.11.1"
 
-# Netowork plugin
+# Network plugin
 calico_version: "v3.28.2"
 
-
-  # Container image settings
+# Container image settings
 pod_infra_image_repo: "{{ kube_image_repo }}/pause"
 pod_infra_image_tag: '3.9'
 
@@ -87,12 +88,7 @@ registry_host: "registry.k8s.local"
 # -----------------------------------------------------------------------------
 offline_k8s_download_dir: "{{ playbook_dir }}/../download"
 
-# Local file server for offline installations
-
-
 # Local package repositories for offline mode
-#yum_repo: "{{ http_server }}/rpms"
-#ubuntu_repo: "{{ http_server }}/debs"
 repository:
   yum_url: "{{ http_server }}/rpms"
   apt_url: "{{ http_server }}/debs"
@@ -103,7 +99,6 @@ files_repo: "{{ http_server }}/files"
 kubeadm_download_url: "{{ files_repo }}/kubeadm"
 kubectl_download_url: "{{ files_repo }}/kubectl"
 kubelet_download_url: "{{ files_repo }}/kubelet"
-#cni_download_url: "{{ files_repo }}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
 crictl_download_url: "{{ files_repo }}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
 runc_download_url: "{{ files_repo }}/runc.{{ image_arch }}"
 containerd_download_url: "{{ files_repo }}/containerd-{{ containerd_version }}-linux-{{ image_arch }}.tar.gz"
@@ -112,10 +107,6 @@ nerdctl_download_url: "{{ files_repo }}/nerdctl-{{ nerdctl_version }}-linux-{{ i
 # -----------------------------------------------------------------------------
 # Network Proxy Configuration
 # -----------------------------------------------------------------------------
-# HTTP/HTTPS proxy settings for downloads acceleration
-
-# Internal networks that should bypass proxy
-
 # Environment variables for proxy configuration
 proxy_env:
   http_proxy: "{{ http_proxy | default('') }}"
@@ -186,7 +177,6 @@ ansible_python_interpreter: /usr/bin/python3.9
 systemd_dir: /etc/systemd/system
 system_namespace: kube-system
 
-
 # Feature flags
 enable_metrics_server: true
 enable_ingress_nginx: true
@@ -209,13 +199,13 @@ log_level: "info"  # debug, info, warn, error
 audit_log_enabled: false
 
 # -----------------------------------------------------------------------------
-# Node Labels Configuration
+# Worker Node Configuration
 # -----------------------------------------------------------------------------
-# Custom node labels for worker nodes
-node_labels:
-  environment: "production"
-  zone: "zone-1"
-  instance-type: "standard"
-  # Add more custom labels as needed
-  # storage: "ssd"
-  # gpu: "nvidia"
+# Kubelet configuration for worker nodes
+kubelet_max_pods: 110
+kubelet_system_reserved_cpu: "100m"
+kubelet_system_reserved_memory: "100Mi"
+kubelet_system_reserved_ephemeral_storage: "1Gi"
+kubelet_kube_reserved_cpu: "100m"
+kubelet_kube_reserved_memory: "100Mi"
+kubelet_kube_reserved_ephemeral_storage: "1Gi" 

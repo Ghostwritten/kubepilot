@@ -1,0 +1,32 @@
+# =============================================================================
+# roles/bastion/defaults/main.yml - Bastion Role Default Variables
+# =============================================================================
+
+# Bastion configuration
+bastion_enable_kubectl: true
+bastion_enable_completion: true
+bastion_enable_aliases: true
+
+# kubectl configuration
+bastion_kubectl_dir: "{{ ansible_env.HOME }}/.kube"
+bastion_kubectl_config: "{{ bastion_kubectl_dir }}/config"
+
+# kubectl aliases
+bastion_kubectl_aliases:
+  k: kubectl
+  kg: "kubectl get"
+  kd: "kubectl describe"
+  kl: "kubectl logs"
+  kex: "kubectl exec -it"
+  kaf: "kubectl apply -f"
+  kdf: "kubectl delete -f"
+  kp: "kubectl get pods"
+  ks: "kubectl get services"
+  kn: "kubectl get nodes"
+
+# Completion settings
+bastion_completion_enabled: true
+bastion_completion_script: "{{ bastion_kubectl_dir }}/kubectl-completion.sh"
+
+# Environment setup
+bastion_env_script: "{{ bastion_kubectl_dir }}/kubectl-env.sh" 

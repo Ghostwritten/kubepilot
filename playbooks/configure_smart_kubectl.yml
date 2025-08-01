@@ -1,0 +1,82 @@
+# =============================================================================
+# playbooks/configure_smart_kubectl.yml - Smart kubectl Configuration
+# =============================================================================
+# This playbook automatically detects bastion configuration in inventory
+# and executes the appropriate kubectl configuration:
+# - If bastion is configured: execute bastion configuration
+# - If no bastion: execute local kubectl configuration
+# =============================================================================
+---
+- name: "Smart kubectl configuration based on inventory"
+  hosts: all  # 改为 all，确保加载所有 inventory 信息
+  gather_facts: false
+  run_once: true  # 只运行一次
+  vars:
+    phase_name: "Smart kubectl Configuration"
+    phase_description: "Auto-detect and configure kubectl based on inventory"
+
+  tasks:
+    - name: "Display smart configuration phase"
+      debug:
+        msg: |
+          🧠 KubePilot Smart kubectl Configuration
+          ========================================
+          {{ phase_description }}
+
+    - name: "Check if bastion group exists in inventory"
+      set_fact:
+        bastion_exists: "{{ groups['bastion'] is defined and groups['bastion'] | length > 0 }}"
+
+    - name: "Debug groups information"
+      debug:
+        msg: |
+          Available groups: {{ groups.keys() | list }}
+          kube_control_plane: {{ groups['kube_control_plane'] | default([]) }}
+          bastion: {{ groups['bastion'] | default([]) }}
+
+    - name: "Check if bastion hosts are reachable"
+      ping:
+      register: bastion_ping_result
+      when: bastion_exists
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['bastion'] }}"
+
+    - name: "Set bastion availability"
+      set_fact:
+        bastion_available: "{{ bastion_exists and (bastion_ping_result.results | selectattr('ping', 'equalto', 'pong') | list | length > 0) }}"
+      when: bastion_exists
+
+    - name: "Display configuration decision"
+      debug:
+        msg: |
+          📊 Configuration Decision:
+          =========================
+          Bastion group exists: {{ bastion_exists }}
+          Bastion hosts reachable: {{ bastion_available | default(false) }}
+          
+          {% if bastion_available %}
+          ✅ Will configure bastion host
+          {% else %}
+          ✅ Will configure local kubectl
+          {% endif %}
+
+    - name: "Configure bastion host (if available)"
+      include_tasks: configure_bastion_tasks.yml
+      when: bastion_available | default(false)
+
+    - name: "Configure local kubectl (if no bastion)"
+      include_tasks: configure_local_tasks.yml
+      when: not (bastion_available | default(false))
+
+    - name: "Display final configuration result"
+      debug:
+        msg: |
+          🎉 Smart kubectl configuration completed!
+          
+          {% if bastion_available | default(false) %}
+          ✅ Bastion host configured successfully
+          📍 Access cluster via: ssh appuser@{{ groups['bastion'][0] }}
+          {% else %}
+          ✅ Local kubectl configured successfully
+          📍 Access cluster directly: kubectl cluster-info
+          {% endif %}

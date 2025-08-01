@@ -67,3 +67,14 @@
     - phase6
     - scaling
 
+- name: "Phase 7: Smart kubectl configuration"
+  import_playbook: playbooks/configure_smart_kubectl.yml
+  vars:
+    phase_name: "Smart kubectl Configuration"
+    phase_description: "Auto-detect and configure kubectl based on inventory"
+  tags: 
+    - smart_kubectl
+    - kubectl
+    - phase7
+    - access
+

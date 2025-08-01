@@ -1,0 +1,36 @@
+# =============================================================================
+# roles/kubernetes/tasks/initialize_cluster.yml - Initialize Kubernetes Cluster
+# =============================================================================
+---
+- name: "Create kubeadm configuration file on the first control plane node"
+  template:
+    src: kubeadm-config.yaml.j2
+    dest: /tmp/kubeadm-config.yaml
+    mode: '0640'
+  when: inventory_hostname == groups['kube_control_plane'][0]
+  tags: kubeadm_init
+
+- name: "Initialize Kubernetes cluster with kubeadm"
+  command: kubeadm init --config /tmp/kubeadm-config.yaml --upload-certs
+  args:
+    creates: /etc/kubernetes/admin.conf
+  register: kubeadm_init_result
+  when: inventory_hostname == groups['kube_control_plane'][0]
+  tags: kubeadm_init
+  
+- name: "Create .kube directory for admin user"
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+  when: inventory_hostname == groups['kube_control_plane'][0]
+  
+- name: "Display kubeadm init output for debugging"
+  debug:
+    var: kubeadm_init_result.stdout_lines
+  when:
+    - inventory_hostname == groups['kube_control_plane'][0]
+    - kubeadm_init_result.changed
+  tags: kubeadm_init

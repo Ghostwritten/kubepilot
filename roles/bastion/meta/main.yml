@@ -1,0 +1,24 @@
+---
+dependencies: []
+galaxy_info:
+  author: KubePilot Team
+  description: Configure bastion host for Kubernetes cluster management
+  company: KubePilot
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+        - 9
+    - name: Ubuntu
+      versions:
+        - bionic
+        - focal
+        - jammy
+  galaxy_tags:
+    - kubernetes
+    - kubectl
+    - bastion
+    - management 

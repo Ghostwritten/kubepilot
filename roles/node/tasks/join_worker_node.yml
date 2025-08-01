@@ -1,0 +1,146 @@
+# =============================================================================
+# roles/node/tasks/join_worker_node.yml - Join Worker Node to Cluster
+# =============================================================================
+---
+- name: "Check if kubelet configuration already exists"
+  stat:
+    path: /var/lib/kubelet/config.yaml
+  register: kubelet_config_exists
+
+- name: "Check if kubelet kubeconfig already exists"
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf_exists
+
+- name: "Set local_node_joined fact"
+  set_fact:
+    local_node_joined: "{{ kubelet_config_exists.stat.exists and kubelet_conf_exists.stat.exists }}"
+
+- name: "Check if current node has already joined Kubernetes cluster"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  shell: |
+    kubectl get nodes --no-headers 2>/dev/null | awk '{print $1}' | grep -w "{{ inventory_hostname }}" || true
+  register: node_in_cluster
+  changed_when: false
+  failed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: not local_node_joined
+
+- name: "Set cluster_node_joined fact"
+  set_fact:
+    cluster_node_joined: "{{ node_in_cluster.stdout != '' }}"
+  when: not local_node_joined
+
+- name: "Set final node_already_joined fact"
+  set_fact:
+    node_already_joined: "{{ local_node_joined or (cluster_node_joined | default(false)) }}"
+
+- name: "Output check result - node already joined"
+  debug:
+    msg: "{{ inventory_hostname }} has already joined the cluster (local check: {{ local_node_joined }}, cluster check: {{ cluster_node_joined | default('skipped') }})"
+  when: node_already_joined
+
+- name: "Output check result - node not joined"
+  debug:
+    msg: "{{ inventory_hostname }} has not joined the cluster yet"
+  when: not node_already_joined
+
+# Clean up any previous failed join attempts
+- name: "Clean old kubeadm configuration (if not joined)"
+  command: kubeadm reset -f
+  become: true
+  when: not node_already_joined
+  ignore_errors: true
+
+- name: "Remove old Kubernetes configurations"
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /etc/kubernetes
+    - /var/lib/kubelet/config.yaml
+    - /var/lib/kubelet/pki
+  become: true
+  ignore_errors: true
+  when: not node_already_joined
+
+# Wait for control plane to be ready
+- name: "Wait for control plane API to be available"
+  wait_for:
+    host: "{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}"
+    port: 6443
+    timeout: 300
+  when: not node_already_joined
+
+# Get fresh join token specifically for worker nodes
+- name: "Generate worker node join command from control plane"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  shell: kubeadm token create --print-join-command --ttl 0
+  register: worker_join_command
+  run_once: true
+  when: not node_already_joined
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: "Display worker join command"
+  debug:
+    msg: "Join command: {{ worker_join_command.stdout }}"
+  when: 
+    - not node_already_joined
+    - worker_join_command is defined
+
+# Execute join as worker node (no --control-plane flag)
+- name: "Join worker node to cluster"
+  shell: "{{ worker_join_command.stdout }} --ignore-preflight-errors=all"
+  become: true
+  register: worker_join_result
+  when: not node_already_joined
+  failed_when: 
+    - worker_join_result.rc != 0
+    - "'already' not in worker_join_result.stdout"
+    - "'This node has joined the cluster' not in worker_join_result.stdout"
+
+- name: "Display join result"
+  debug:
+    var: worker_join_result.stdout_lines
+  when: 
+    - not node_already_joined
+    - worker_join_result is defined
+    - worker_join_result.changed
+
+# Verify join was successful
+- name: "Verify kubelet configuration was created after join"
+  stat:
+    path: /var/lib/kubelet/config.yaml
+  register: post_join_kubelet_config_check
+  when: not node_already_joined
+
+- name: "Verify kubelet kubeconfig was created after join"
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: post_join_kubelet_conf_check  
+  when: not node_already_joined
+
+- name: "Fail if kubelet configuration was not created"
+  fail:
+    msg: "Join operation completed but kubelet configuration files were not created"
+  when:
+    - not node_already_joined
+    - not (post_join_kubelet_config_check.stat.exists and post_join_kubelet_conf_check.stat.exists)
+
+# Wait for node to become ready
+- name: "Wait for worker node to be ready in cluster"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  shell: kubectl get nodes {{ inventory_hostname }} --no-headers | awk '{print $2}'
+  register: worker_node_status
+  retries: 30
+  delay: 10
+  until: worker_node_status.stdout == "Ready"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: not node_already_joined
+
+- name: "Output final worker node join status"
+  debug:
+    msg: "Worker node {{ inventory_hostname }} status: {{ worker_node_status.stdout | default('already joined') }}"

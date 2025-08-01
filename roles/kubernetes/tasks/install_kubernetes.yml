@@ -1,0 +1,32 @@
+# =============================================================================
+# roles/kubernetes/tasks/install_kubernetes.yml - Install Kubernetes Components
+# =============================================================================
+---
+- name: "Check if Kubernetes components are already installed"
+  package_facts:
+    manager: auto
+
+- name: "Install kubelet and kubeadm on all nodes"
+  yum:
+    name:
+      - "kubelet-{{ kube_version_full }}"
+      - "kubeadm-{{ kube_version_full }}"
+    state: present
+    disable_gpg_check: yes
+  when: "'kubelet' not in ansible_facts.packages or ansible_facts.packages['kubelet'][0].version != kube_version_full"
+
+- name: "Install kubectl on control plane nodes"
+  yum:
+    name: "kubectl-{{ kube_version_full }}"
+    state: present
+    disable_gpg_check: yes
+  when:
+    - inventory_hostname in groups['kube_control_plane']
+    - "'kubectl' not in ansible_facts.packages or ansible_facts.packages['kubectl'][0].version != kube_version_full"
+
+- name: "Ensure kubelet service is started and enabled"
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes
+    daemon_reload: yes

@@ -1,87 +1,35 @@
+# =============================================================================
+# roles/node/tasks/main.yml - Worker Node Setup and Cluster Joining
+# =============================================================================
 ---
-- name: Check if kubelet is installed
-  command: kubelet --version
-  register: kubelet_check
-  ignore_errors: yes
-
-- name: Check if kubeadm is installed
-  command: kubeadm version
-  register: kubeadm_check
-  ignore_errors: yes
-
-- name: Check if swap is disabled
-  command: swapon --show
-  register: swap_check
-  failed_when: swap_check.stdout != ""
-
-- name: Check if current node has already joined Kubernetes cluster
-  delegate_to: "{{ groups['kube_control_plane'][0] }}"
-  shell: |
-    kubectl get nodes --no-headers 2>/dev/null | awk '{print $1}' | grep -w "{{ inventory_hostname }}" || true
-  register: node_in_cluster
-  changed_when: false
-  failed_when: false
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-
-- name: Output check result - node already in cluster
+- name: "Display worker node phase information"
   debug:
-    msg: "{{ inventory_hostname }} has already joined the cluster"
-  when: node_in_cluster.stdout != ""
+    msg: |
+      🔧 KubePilot Worker Node Phase
+      ==============================
+      Node: {{ inventory_hostname }}
+      Target Cluster: {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}
 
-- name: Output check result - node not in cluster
-  debug:
-    msg: "{{ inventory_hostname }} has not joined the cluster yet"
-  when: node_in_cluster.stdout == ""
+- name: "Install Kubernetes node components"
+  import_tasks: install_node_components.yml
+  tags:
+    - install
+    - components
 
-- name: Clean old kubeadm configuration (optional)
-  command: kubeadm reset -f
-  become: true
-  when: node_in_cluster.stdout == ""   # Only execute if not joined
+- name: "Join worker node to cluster"
+  import_tasks: join_worker_node.yml
+  tags:
+    - join
+    - cluster
 
-- name: Get kubeadm join command from master node
-  delegate_to: "{{ groups['kube_control_plane'][0] }}"
-  shell: kubeadm token create --print-join-command
-  args:
-    executable: /bin/bash
-  register: join_command
-  run_once: true
-  when: node_in_cluster.stdout == ""
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
+- name: "Configure worker node post-join"
+  import_tasks: configure_worker.yml
+  tags:
+    - configure
+    - post-join
 
-- name: Print kubeadm join command
-  debug:
-    msg: "{{ join_command.stdout }}"
-  run_once: true
-  when: node_in_cluster.stdout == ""
-
-- name: Execute kubeadm join on node
-  shell: "{{ join_command.stdout }} --ignore-preflight-errors=all"
-  args:
-    executable: /bin/bash
-  become: true
-  register: join_result
-  when: node_in_cluster.stdout == ""
-  failed_when: join_result.rc != 0 and "'already' not in join_result.stdout"
-
-- name: Wait for node to join successfully (check node status on master)
-  delegate_to: "{{ groups['kube_control_plane'][0] }}"
-  shell: kubectl get nodes {{ inventory_hostname }} --no-headers | awk '{print $2}'
-  register: node_status
-  retries: 20
-  delay: 15
-  until: node_status.stdout == "Ready"
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-
-- name: Label node as worker
-  delegate_to: "{{ groups['kube_control_plane'][0] }}"
-  shell: kubectl label nodes {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  when: node_status.stdout == "Ready"
-
-- name: Output node join status
-  debug:
-    msg: "Node {{ inventory_hostname }} status: {{ node_status.stdout }}"
+- name: "Apply node labels"
+  import_tasks: apply_labels.yml
+  tags:
+    - labels
+    - node-labels

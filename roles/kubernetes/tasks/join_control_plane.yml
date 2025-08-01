@@ -1,0 +1,103 @@
+# =============================================================================
+# roles/kubernetes/tasks/join_control_plane.yml - Join Additional Control Plane Nodes
+# =============================================================================
+---
+- name: "Check if admin.conf already exists"
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf_exists
+
+- name: "Check if kube-apiserver manifest already exists"
+  stat:
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+  register: kube_apiserver_exists
+
+- name: "Set node_already_joined fact"
+  set_fact:
+    node_already_joined: "{{ admin_conf_exists.stat.exists or kube_apiserver_exists.stat.exists }}"
+
+- name: "Display node status"
+  debug:
+    msg: "Node is already part of the cluster, skipping join operation"
+  when: node_already_joined
+
+- name: "Wait for first control plane node to be ready"
+  wait_for:
+    host: "{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}"
+    port: 6443
+    timeout: 300
+  when: not node_already_joined
+
+- name: "Get cluster info from first control plane node"
+  shell: |
+    kubeadm token create --print-join-command --ttl 0
+  register: join_command_result
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  when: not node_already_joined
+
+- name: "Get certificate key from first control plane node"
+  shell: |
+    kubeadm init phase upload-certs --upload-certs | tail -1
+  register: certificate_key_result
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  when: not node_already_joined
+
+- name: "Join control plane node to cluster"
+  shell: |
+    {{ join_command_result.stdout }} --control-plane --certificate-key {{ certificate_key_result.stdout }}
+  register: join_result
+  when: not node_already_joined
+
+- name: "Display join result"
+  debug:
+    var: join_result.stdout_lines
+  when: 
+    - not node_already_joined
+    - join_result.changed
+
+- name: "Verify kube-apiserver manifest was created after join"
+  stat:
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+  register: post_join_apiserver_check
+  when: not node_already_joined
+
+- name: "Fail if kube-apiserver manifest was not created"
+  fail:
+    msg: "Join operation completed but kube-apiserver manifest was not created"
+  when:
+    - not node_already_joined
+    - not post_join_apiserver_check.stat.exists
+
+- name: "Create .kube directory for ansible user"
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: "Copy admin.conf to ansible user's .kube directory"
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0644'
+    remote_src: yes
+
+- name: "Create .kube directory for root user"
+  file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: "Copy admin.conf to root user's .kube directory"
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    owner: root
+    group: root
+    mode: '0600'
+    remote_src: yes

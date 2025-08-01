@@ -1,0 +1,175 @@
+# =============================================================================
+# playbooks/configure_bastion_tasks.yml - Bastion Configuration Tasks
+# =============================================================================
+---
+- name: "Debug groups and variables"
+  debug:
+    msg: |
+      🔍 Debug Information:
+      ====================
+      Available groups: {{ groups.keys() | list }}
+      kube_control_plane group: {{ groups.get('kube_control_plane', []) }}
+      bastion group: {{ groups.get('bastion', []) }}
+      First control plane: {{ groups.get('kube_control_plane', [])[0] | default('NOT_FOUND') }}
+
+- name: "Verify required groups exist"
+  fail:
+    msg: |
+      ❌ Required groups not found:
+      - kube_control_plane: {{ groups.get('kube_control_plane', []) | length }} hosts
+      - bastion: {{ groups.get('bastion', []) | length }} hosts
+  when: 
+    - groups.get('kube_control_plane', []) | length == 0
+    - groups.get('bastion', []) | length == 0
+
+- name: "Gather facts on bastion"
+  setup:
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: "Display bastion configuration phase"
+  debug:
+    msg: |
+      🏰 KubePilot Bastion Configuration
+      ==================================
+      Configuring bastion host: {{ groups['bastion'][0] }}
+
+- name: "Check if kubectl is installed on bastion"
+  command: which kubectl
+  register: kubectl_check
+  failed_when: false
+  changed_when: false
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: "Install kubectl on bastion (if not installed)"
+  block:
+    - name: "Download kubectl binary (online mode)"
+      get_url:
+        url: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ kube_download_arch }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+        validate_certs: false
+      when: offline_mode | default(false) == false
+      delegate_to: "{{ groups['bastion'][0] }}"
+      become: true
+
+    - name: "Download kubectl binary (offline mode)"
+      get_url:
+        url: "{{ files_repo }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+        validate_certs: false
+      when: offline_mode | default(true) == true
+      delegate_to: "{{ groups['bastion'][0] }}"
+      become: true
+
+    - name: "Verify kubectl installation"
+      command: /usr/local/bin/kubectl version --client
+      register: kubectl_version
+      changed_when: false
+      delegate_to: "{{ groups['bastion'][0] }}"
+      environment:
+        PATH: "/usr/local/bin:/usr/bin:/bin:{{ ansible_env.PATH }}"
+  when: kubectl_check.rc != 0
+
+- name: "Set kubeconfig path based on user"
+  set_fact:
+    kube_config_path: "{{ '/root' if ansible_user == 'root' else '/home/' + ansible_user }}"
+
+- name: "Create .kube directory on bastion"
+  file:
+    path: "{{ kube_config_path }}/.kube"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  delegate_to: "{{ groups['bastion'][0] }}"
+  become: true
+
+- name: "Debug control plane information"
+  debug:
+    msg: |
+      🔍 Control Plane Debug:
+      ======================
+      Target host: {{ groups['kube_control_plane'][0] }}
+      Host IP: {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}
+
+- name: "Check if admin.conf exists on control plane"
+  stat:
+    path: /etc/kubernetes/admin.conf
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  become: true
+  register: admin_conf_stat
+
+- name: "Debug stat result"
+  debug:
+    msg: |
+      📁 File Check Result:
+      ====================
+      Checked on: {{ groups['kube_control_plane'][0] }}
+      File exists: {{ admin_conf_stat.stat.exists | default('unknown') }}
+      File size: {{ admin_conf_stat.stat.size | default('unknown') }}
+      Error (if any): {{ admin_conf_stat.msg | default('none') }}
+
+- name: "File exists - proceeding with copy"
+  debug:
+    msg: "✅ admin.conf found on {{ groups['kube_control_plane'][0] }}, proceeding with copy"
+  when: admin_conf_stat.stat.exists | default(false)
+
+- name: "File not found - skipping copy"
+  debug:
+    msg: "❌ admin.conf NOT found on {{ groups['kube_control_plane'][0] }}, skipping copy"
+  when: not (admin_conf_stat.stat.exists | default(false))
+
+- name: "Copy kubeconfig from control plane to bastion"
+  fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ kube_config_path }}/.kube/config"
+    flat: yes
+    mode: '0600'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  become: true
+  when: admin_conf_stat.stat.exists | default(false)
+
+- name: "Update kubeconfig server address for bastion access"
+  replace:
+    path: "{{ kube_config_path }}/.kube/config"
+    regexp: 'server: https://127\.0\.0\.1:6443'
+    replace: "server: https://{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443"
+  delegate_to: "{{ groups['bastion'][0] }}"
+  become: true
+  when: admin_conf_stat.stat.exists | default(false)
+
+- name: "Set proper permissions on kubeconfig"
+  file:
+    path: "{{ kube_config_path }}/.kube/config"
+    mode: '0600'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  delegate_to: "{{ groups['bastion'][0] }}"
+  become: true
+  when: admin_conf_stat.stat.exists | default(false)
+
+- name: "Test kubectl connectivity from bastion"
+  command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+  delegate_to: "{{ groups['bastion'][0] }}"
+  environment:
+    PATH: "/usr/local/bin:/usr/bin:/bin:{{ ansible_env.PATH }}"
+    KUBECONFIG: "{{ kube_config_path }}/.kube/config"
+  when: admin_conf_stat.stat.exists | default(false)
+
+- name: "Display cluster information from bastion"
+  debug:
+    msg: |
+      ✅ Bastion kubectl configuration completed successfully!
+
+      Cluster Information:
+      {{ cluster_info.stdout | default('kubectl test skipped - admin.conf not found') }}
+
+      Usage from bastion:
+      - kubectl get nodes
+      - kubectl get pods --all-namespaces
+      - kubectl get services --all-namespaces

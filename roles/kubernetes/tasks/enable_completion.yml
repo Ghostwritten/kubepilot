@@ -1,0 +1,23 @@
+# =============================================================================
+# roles/kubernetes/tasks/enable_completion.yml - Enable Shell Completions
+# =============================================================================
+---
+- name: "Enable kubectl bash completion for the ansible user"
+  lineinfile:
+    path: "/home/{{ ansible_user }}/.bashrc"
+    line: 'source <(kubectl completion bash)'
+    regexp: '^source <\\(kubectl completion bash\\)'
+    state: present
+    create: yes
+  when: inventory_hostname == groups['kube_control_plane'][0]
+  tags: kubeconfig
+
+- name: "Enable kubectl bash completion for the root user"
+  lineinfile:
+    path: "/root/.bashrc"
+    line: 'source <(kubectl completion bash)'
+    regexp: '^source <\\(kubectl completion bash\\)'
+    state: present
+    create: yes
+  when: inventory_hostname == groups['kube_control_plane'][0]
+  tags: kubeconfig

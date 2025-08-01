@@ -1,0 +1,103 @@
+# =============================================================================
+# roles/node/tasks/configure_worker.yml - Post-Join Worker Node Configuration
+# =============================================================================
+---
+- name: "Display worker node configuration phase"
+  debug:
+    msg: |
+      ⚙️  KubePilot Worker Node Configuration Phase
+      ==============================================
+      Node: {{ inventory_hostname }}
+      Configuring post-join settings...
+
+- name: "Ensure kubelet service is enabled and running"
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true
+  when: not node_already_joined | default(false)
+
+- name: "Configure kubelet max pods (if specified)"
+  lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^maxPods:'
+    line: 'maxPods: {{ kubelet_max_pods | default(110) }}'
+    create: no
+  become: true
+  when: 
+    - not node_already_joined | default(false)
+    - kubelet_max_pods is defined
+
+- name: "Configure kubelet system reserved resources (if specified)"
+  lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^systemReserved:'
+    line: |
+      systemReserved:
+        cpu: {{ kubelet_system_reserved_cpu | default('100m') }}
+        memory: {{ kubelet_system_reserved_memory | default('100Mi') }}
+        ephemeral-storage: {{ kubelet_system_reserved_ephemeral_storage | default('1Gi') }}
+    create: no
+  become: true
+  when: 
+    - not node_already_joined | default(false)
+    - kubelet_system_reserved_cpu is defined or kubelet_system_reserved_memory is defined
+
+- name: "Configure kubelet kube reserved resources (if specified)"
+  lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^kubeReserved:'
+    line: |
+      kubeReserved:
+        cpu: {{ kubelet_kube_reserved_cpu | default('100m') }}
+        memory: {{ kubelet_kube_reserved_memory | default('100Mi') }}
+        ephemeral-storage: {{ kubelet_kube_reserved_ephemeral_storage | default('1Gi') }}
+    create: no
+  become: true
+  when: 
+    - not node_already_joined | default(false)
+    - kubelet_kube_reserved_cpu is defined or kubelet_kube_reserved_memory is defined
+
+- name: "Restart kubelet service after configuration changes"
+  systemd:
+    name: kubelet
+    state: restarted
+  become: true
+  when: 
+    - not node_already_joined | default(false)
+    - kubelet_max_pods is defined or kubelet_system_reserved_cpu is defined or kubelet_kube_reserved_cpu is defined
+
+- name: "Wait for kubelet to be ready after restart"
+  wait_for:
+    port: 10250
+    host: "{{ ansible_host | default(inventory_hostname) }}"
+    timeout: 60
+  when: not node_already_joined | default(false)
+
+- name: "Verify worker node is ready in cluster"
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  shell: kubectl get nodes {{ inventory_hostname }} --no-headers | awk '{print $2}'
+  register: final_worker_status
+  retries: 10
+  delay: 5
+  until: final_worker_status.stdout == "Ready"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: not node_already_joined | default(false)
+
+- name: "Display final worker node configuration status"
+  debug:
+    msg: |
+      ✅ Worker node {{ inventory_hostname }} configuration completed successfully!
+      Status: {{ final_worker_status.stdout | default('Ready') }}
+      Max Pods: {{ kubelet_max_pods | default(110) }}
+  when: not node_already_joined | default(false)
+
+
+
+- name: "Display worker node already configured status"
+  debug:
+    msg: "Worker node {{ inventory_hostname }} is already configured and ready"
+  when: node_already_joined | default(false) 
