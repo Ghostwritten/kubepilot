@@ -21,15 +21,16 @@
   import_tasks: system.yml
   tags: ['base', 'system']
 
-- name: Configure kernel parameters
-  import_tasks: kernel.yml
-  when: not skip_kubernetes_config
-  tags: ['base', 'kernel']
-
+# Load kernel modules BEFORE configuring kernel parameters
 - name: Load kernel modules
   import_tasks: modules.yml
   when: not skip_kubernetes_config
   tags: ['base', 'modules']
+
+- name: Configure kernel parameters
+  import_tasks: kernel.yml
+  when: not skip_kubernetes_config
+  tags: ['base', 'kernel']
 
 - name: Configure firewall
   import_tasks: firewall.yml

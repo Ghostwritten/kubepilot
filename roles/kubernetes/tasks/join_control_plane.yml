@@ -14,12 +14,45 @@
 
 - name: "Set node_already_joined fact"
   set_fact:
-    node_already_joined: "{{ admin_conf_exists.stat.exists or kube_apiserver_exists.stat.exists }}"
+    node_already_joined: "{{ admin_conf_exists.stat.exists and kube_apiserver_exists.stat.exists }}"
 
 - name: "Display node status"
   debug:
     msg: "Node is already part of the cluster, skipping join operation"
   when: node_already_joined
+
+- name: "Clean up any partial join state"
+  block:
+    - name: "Stop kubelet service"
+      systemd:
+        name: kubelet
+        state: stopped
+        daemon_reload: yes
+      ignore_errors: yes
+
+    - name: "Remove any existing kubelet configuration"
+      file:
+        path: /var/lib/kubelet/config.yaml
+        state: absent
+      ignore_errors: yes
+
+    - name: "Remove any existing admin.conf"
+      file:
+        path: /etc/kubernetes/admin.conf
+        state: absent
+      ignore_errors: yes
+
+    - name: "Remove any existing manifests"
+      file:
+        path: /etc/kubernetes/manifests
+        state: absent
+      ignore_errors: yes
+
+    - name: "Remove any existing bootstrap-kubelet.conf"
+      file:
+        path: /etc/kubernetes/bootstrap-kubelet.conf
+        state: absent
+      ignore_errors: yes
 
 - name: "Wait for first control plane node to be ready"
   wait_for:
@@ -28,6 +61,13 @@
     timeout: 300
   when: not node_already_joined
 
+- name: "Ensure sequential node joining by adding delay based on node index"
+  pause:
+    seconds: "{{ (groups['kube_control_plane'].index(inventory_hostname) - 1) * 30 }}"
+  when: 
+    - not node_already_joined
+    - inventory_hostname != groups['kube_control_plane'][0]
+
 - name: "Get cluster info from first control plane node"
   shell: |
     kubeadm token create --print-join-command --ttl 0
@@ -35,17 +75,69 @@
   delegate_to: "{{ groups['kube_control_plane'][0] }}"
   when: not node_already_joined
 
-- name: "Get certificate key from first control plane node"
+- name: "Get stored certificate key from first control plane node"
   shell: |
-    kubeadm init phase upload-certs --upload-certs | tail -1
+    if [ -f /tmp/kubeadm_cert_key ]; then
+      cat /tmp/kubeadm_cert_key
+    else
+      echo "ERROR: Certificate key not found"
+      exit 1
+    fi
   register: certificate_key_result
   delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  when: not node_already_joined
+  retries: 3
+  delay: 5
+  until: certificate_key_result.rc == 0 and certificate_key_result.stdout | length > 0 and "ERROR" not in certificate_key_result.stdout
+
+- name: "Wait for certificate key to be available"
+  pause:
+    seconds: 15
+  when: not node_already_joined
+
+- name: "Check if kubeadm-certs secret exists"
+  shell: |
+    kubectl get secret kubeadm-certs -n kube-system --no-headers -o custom-columns=":metadata.name" 2>/dev/null || echo "NOT_FOUND"
+  register: cert_secret_check
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  when: not node_already_joined
+
+- name: "Verify certificate key is valid"
+  shell: |
+    if kubectl get secret kubeadm-certs -n kube-system >/dev/null 2>&1; then
+      kubectl get secret kubeadm-certs -n kube-system -o jsonpath='{.data}' | jq -r 'keys[]' | grep -q "{{ certificate_key_result.stdout }}" && echo "VALID" || echo "NOT_FOUND"
+    else
+      echo "SECRET_NOT_FOUND"
+    fi
+  register: cert_key_verification
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  when: not node_already_joined
+  ignore_errors: yes
+
+- name: "Display certificate key verification result"
+  debug:
+    msg: |
+      Certificate key verification:
+      - Key: {{ certificate_key_result.stdout }}
+      - Secret exists: {{ cert_secret_check.stdout }}
+      - Verification result: {{ cert_key_verification.stdout | default('N/A') }}
+      - Verification RC: {{ cert_key_verification.rc }}
+  when: not node_already_joined
+
+- name: "Validate certificate key format"
+  assert:
+    that:
+      - certificate_key_result.stdout | length == 64
+    fail_msg: "Invalid certificate key format"
   when: not node_already_joined
 
 - name: "Join control plane node to cluster"
   shell: |
     {{ join_command_result.stdout }} --control-plane --certificate-key {{ certificate_key_result.stdout }}
   register: join_result
+  retries: 5
+  delay: 15
+  until: join_result.rc == 0
   when: not node_already_joined
 
 - name: "Display join result"
@@ -101,3 +193,27 @@
     group: root
     mode: '0600'
     remote_src: yes
+
+- name: "Ensure kubelet service is started and enabled after join"
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  when: not node_already_joined
+
+- name: "Wait for kubelet to be ready"
+  shell: systemctl is-active kubelet
+  register: kubelet_status
+  retries: 10
+  delay: 3
+  until: kubelet_status.stdout == "active"
+  when: not node_already_joined
+
+- name: "Display final join status"
+  debug:
+    msg: |
+      Control plane node {{ inventory_hostname }} successfully joined the cluster
+      - Kubelet status: {{ kubelet_status.stdout | default('unknown') }}
+      - API server manifest: {{ post_join_apiserver_check.stat.exists | default(false) }}
+  when: not node_already_joined

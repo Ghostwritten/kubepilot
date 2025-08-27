@@ -2,7 +2,7 @@
 dependencies: []
 galaxy_info:
   author: KubePilot Team
-  description: Configure bastion host for Kubernetes cluster management
+  description: Provide deployment completion guidance and cluster access instructions
   company: KubePilot
   license: MIT
   min_ansible_version: 2.9
@@ -20,5 +20,5 @@ galaxy_info:
   galaxy_tags:
     - kubernetes
     - kubectl
-    - bastion
+    - guide
     - management 

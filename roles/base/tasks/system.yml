@@ -1,7 +1,7 @@
 # roles/base/tasks/system.yml
 ---
 - name: Configure system limits
-  pam_limits:
+  community.general.pam_limits:
     domain: "{{ item.domain }}"
     limit_type: "{{ item.type }}"
     limit_item: "{{ item.item }}"
@@ -50,7 +50,7 @@
   tags: ['system', 'logging']
 
 - name: Set timezone
-  timezone:
+  community.general.timezone:
     name: "{{ system_timezone | default('UTC') }}"
   become: true
   when: system_timezone is defined

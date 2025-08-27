@@ -1,8 +1,8 @@
 # =============================================================================
-# roles/bastion/defaults/main.yml - Bastion Role Default Variables
+# roles/guide/defaults/main.yml - Guide Role Default Variables
 # =============================================================================
 
-# Bastion configuration
+# Guide configuration
 bastion_enable_kubectl: true
 bastion_enable_completion: true
 bastion_enable_aliases: true

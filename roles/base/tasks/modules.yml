@@ -1,5 +1,14 @@
 # roles/base/tasks/modules.yml
 ---
+- name: Check if modules are already loaded
+  shell: lsmod | grep -E "^(br_netfilter|overlay|nf_conntrack)"
+  register: modules_precheck
+  changed_when: false
+  failed_when: false
+  become: true
+  when: not (skip_kubernetes_config | default(false))
+  tags: ['modules', 'precheck']
+
 - name: Load required kernel modules
   modprobe:
     name: "{{ item }}"
@@ -8,17 +17,56 @@
   become: true
   ignore_errors: true
   register: modprobe_result
+  when: not (skip_kubernetes_config | default(false))
   tags: ['modules', 'load']
 
-- name: Debug module loading failures
+- name: Debug module loading results
   debug:
-    msg: "Failed to load module {{ item.item }}: {{ item.msg | default('Unknown error') }}"
+    msg: |
+      📦 Module Loading Results:
+      ========================
+      {% for result in modprobe_result.results %}
+      {{ result.item }}: {{ 'SUCCESS' if not result.failed else 'FAILED - ' + (result.msg | default('Unknown error')) }}
+      {% endfor %}
+  when: not (skip_kubernetes_config | default(false))
+  tags: ['modules', 'debug']
+
+- name: Retry failed critical modules with alternative method
+  shell: |
+    MODULE="{{ item.item }}"
+    
+    # Check if already loaded
+    if lsmod | grep -q "^${MODULE}"; then
+        echo "INFO: $MODULE already loaded"
+        exit 0
+    fi
+    
+    # Try modprobe
+    if modprobe "$MODULE" 2>/dev/null; then
+        echo "SUCCESS: $MODULE loaded with modprobe"
+        exit 0
+    fi
+    
+    # Check if built into kernel
+    if [ -f /proc/config.gz ]; then
+        if zcat /proc/config.gz 2>/dev/null | grep -q "CONFIG_${MODULE^^}=y"; then
+            echo "INFO: $MODULE built into kernel"
+            exit 0
+        fi
+    fi
+    
+    echo "FAILED: Could not load $MODULE"
+    exit 1
   loop: "{{ modprobe_result.results }}"
   when: 
+    - not (skip_kubernetes_config | default(false))
     - item.failed is defined
     - item.failed
     - item.item in ['br_netfilter', 'overlay']
-  tags: ['modules', 'debug']
+  become: true
+  register: retry_result
+  ignore_errors: true
+  tags: ['modules', 'retry']
 
 - name: Ensure modules directory exists
   file:
@@ -28,6 +76,7 @@
     owner: root
     group: root
   become: true
+  when: not (skip_kubernetes_config | default(false))
   tags: ['modules', 'persistent']
 
 - name: Configure persistent kernel module loading
@@ -39,7 +88,16 @@
     mode: '0644'
     backup: "{{ backup_configs | default(true) }}"
   become: true
+  when: not (skip_kubernetes_config | default(false))
   tags: ['modules', 'persistent']
+
+- name: Wait for module initialization
+  pause:
+    seconds: 2
+  when: 
+    - not (skip_kubernetes_config | default(false))
+    - modprobe_result is changed
+  tags: ['modules', 'wait']
 
 - name: Verify critical modules are loaded
   shell: lsmod | grep -E "^(br_netfilter|overlay|nf_conntrack)"
@@ -47,10 +105,26 @@
   changed_when: false
   failed_when: false
   become: true
+  when: not (skip_kubernetes_config | default(false))
   tags: ['modules', 'verify']
 
-- name: Display loaded modules status
+- name: Check bridge netfilter sysctl availability
+  stat:
+    path: "/proc/sys/net/bridge/bridge-nf-call-iptables"
+  register: bridge_sysctl_available
+  when: not (skip_kubernetes_config | default(false))
+  tags: ['modules', 'bridge_check']
+
+- name: Display modules status
   debug:
-    msg: "Loaded modules: {{ modules_check.stdout_lines | default([]) }}"
-  when: modules_check.stdout_lines is defined
+    msg: |
+      🔧 Kernel Modules Status:
+      ========================
+      Currently loaded: {{ modules_check.stdout_lines | default(['None']) | join(', ') }}
+      Bridge netfilter: {{ 'available' if bridge_sysctl_available.stat.exists else 'not available' }}
+      
+      {% if not bridge_sysctl_available.stat.exists %}
+      ⚠️  Bridge netfilter sysctls not available - this may be normal if br_netfilter is built-in
+      {% endif %}
+  when: not (skip_kubernetes_config | default(false))
   tags: ['modules', 'status']

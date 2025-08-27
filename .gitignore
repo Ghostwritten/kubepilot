@@ -1,6 +1,7 @@
 # Ansible
 *.retry
 .ansible/
+offline
 ansible.log
 
 # OS Files

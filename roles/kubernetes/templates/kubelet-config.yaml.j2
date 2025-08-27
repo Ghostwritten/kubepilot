@@ -1,0 +1,44 @@
+# =============================================================================
+# Kubelet Configuration Template - Simplified for v1.31.9
+# =============================================================================
+
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+
+# Basic cluster configuration
+clusterDomain: "{{ kubelet_cluster_domain | default('cluster.local') }}"
+clusterDNS:
+  - "{{ kubelet_cluster_dns | default('10.96.0.10') }}"
+
+# Container runtime configuration
+containerRuntimeEndpoint: "{{ kubelet_container_runtime_endpoint | default('unix:///run/containerd/containerd.sock') }}"
+staticPodPath: "/etc/kubernetes/manifests"
+
+# Cgroup configuration
+cgroupDriver: {{ kubelet_cgroup_driver | default('systemd') }}
+
+# Basic eviction configuration
+evictionHard:
+  memory.available: "100Mi"
+  nodefs.available: "10%"
+  nodefs.inodesFree: "5%"
+
+# Basic system configuration
+maxPods: 110
+failSwapOn: true
+
+# Basic logging
+logging:
+  format: text
+  verbosity: {{ kubelet_log_level | default(2) | int }}
+
+# Basic authentication
+authentication:
+  anonymous:
+    enabled: true
+  webhook:
+    enabled: false
+
+# Basic authorization
+authorization:
+  mode: AlwaysAllow 

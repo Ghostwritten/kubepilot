@@ -1,0 +1,143 @@
+# =============================================================================
+# Kubernetes Role Default Variables
+# =============================================================================
+# This file contains default values for the kubernetes role
+# These can be overridden in group_vars, host_vars, or playbook vars
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Kubelet Configuration Defaults
+# -----------------------------------------------------------------------------
+# Kubelet resource reservation settings
+kubelet_system_reserved:
+  cpu: "500m"
+  memory: "512Mi"
+  ephemeral-storage: "500Mi"
+  pid: "1000"
+
+kubelet_kube_reserved:
+  cpu: "100m"
+  memory: "256Mi"
+  ephemeral-storage: "500Mi"
+  pid: "1000"
+
+# Kubelet pod limits
+kubelet_max_pods: 110
+kubelet_pod_pids_limit: -1
+
+# Kubelet logging configuration
+kubelet_log_level: "info"
+
+# -----------------------------------------------------------------------------
+# Kubelet Feature Gates
+# -----------------------------------------------------------------------------
+kubelet_feature_gates:
+  RotateKubeletServerCertificate: true
+  KubeletPodResources: true
+  KubeletPodResourcesGetAllocatable: true
+
+# -----------------------------------------------------------------------------
+# Kubelet Eviction Configuration
+# -----------------------------------------------------------------------------
+kubelet_eviction_hard:
+  memory.available: "100Mi"
+  nodefs.available: "10%"
+  nodefs.inodesFree: "5%"
+  imagefs.available: "15%"
+
+kubelet_eviction_soft:
+  memory.available: "200Mi"
+  nodefs.available: "15%"
+  nodefs.inodesFree: "10%"
+  imagefs.available: "25%"
+
+kubelet_eviction_soft_grace_period:
+  memory.available: "1m30s"
+  nodefs.available: "1m30s"
+  nodefs.inodesFree: "1m30s"
+  imagefs.available: "1m30s"
+
+kubelet_eviction_max_pod_grace_period: 60
+
+# -----------------------------------------------------------------------------
+# Kubelet System Configuration
+# -----------------------------------------------------------------------------
+kubelet_cgroup_driver: "systemd"
+kubelet_cgroup_root: "/system.slice"
+kubelet_fail_swap_on: true  # Production best practice
+kubelet_protect_kernel_defaults: true  # Production best practice
+
+# -----------------------------------------------------------------------------
+# Kubelet Network Configuration
+# -----------------------------------------------------------------------------
+kubelet_cluster_domain: "cluster.local"
+kubelet_cluster_dns: "10.96.0.10"  # Default CoreDNS service IP
+kubelet_port: 10250
+kubelet_readonly_port: 0  # Disable read-only port for security
+kubelet_node_ip: "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+
+# -----------------------------------------------------------------------------
+# Kubelet Container Runtime Configuration
+# -----------------------------------------------------------------------------
+kubelet_container_runtime_endpoint: "unix:///run/containerd/containerd.sock"
+kubelet_container_log_max_size: "50Mi"
+kubelet_container_log_max_files: 5
+
+# -----------------------------------------------------------------------------
+# Kubelet Performance Configuration
+# -----------------------------------------------------------------------------
+kubelet_max_open_files: 1000000
+kubelet_pod_max_concurrent_disks: 16
+kubelet_image_gc_high_threshold_percent: 85
+kubelet_image_gc_low_threshold_percent: 80
+kubelet_max_parallel_image_pulls: 1
+kubelet_event_record_qps: 50
+
+# -----------------------------------------------------------------------------
+# Kubelet Timing Configuration
+# -----------------------------------------------------------------------------
+kubelet_file_check_frequency: "20s"
+kubelet_http_check_frequency: "20s"
+kubelet_node_status_update_frequency: "10s"
+kubelet_node_status_report_frequency: "5m"
+kubelet_node_lease_duration_seconds: 40
+kubelet_sync_frequency: "1m"
+kubelet_runtime_request_timeout: "15m"
+kubelet_streaming_connection_idle_timeout: "4h"
+kubelet_volume_stats_agg_period: "1m"
+
+# -----------------------------------------------------------------------------
+# Kubelet Registry Configuration
+# -----------------------------------------------------------------------------
+kubelet_registry_pull_qps: 5
+kubelet_registry_burst: 10
+
+# -----------------------------------------------------------------------------
+# Kubelet TLS Configuration
+# -----------------------------------------------------------------------------
+kubelet_server_tls_bootstrap: true
+kubelet_rotate_certificates: true
+kubelet_tls_cert_file: "/var/lib/kubelet/pki/kubelet.crt"
+kubelet_tls_private_key_file: "/var/lib/kubelet/pki/kubelet.key"
+
+# Kubelet Shutdown Configuration
+# -----------------------------------------------------------------------------
+kubelet_shutdown_grace_period: "60s"
+kubelet_shutdown_grace_period_critical_pods: "20s"
+
+# -----------------------------------------------------------------------------
+# Kubelet Volume Configuration
+# -----------------------------------------------------------------------------
+kubelet_volume_plugin_dir: "/usr/libexec/kubernetes/kubelet-plugins/volume/exec"
+kubelet_resolv_conf: "/etc/resolv.conf"
+kubelet_serialize_image_pulls: true
+
+# -----------------------------------------------------------------------------
+# Kubelet Health Check Configuration
+# -----------------------------------------------------------------------------
+kubelet_healthz_bind_address: "127.0.0.1"
+kubelet_healthz_port: 10248
+
+# Kubelet Cgroups Configuration
+# -----------------------------------------------------------------------------
+kubelet_kubelet_cgroups: "/system.slice/kubelet.service" 

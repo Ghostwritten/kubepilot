@@ -1,0 +1,18 @@
+# =============================================================================
+# playbooks/guide.yml - Deployment Completion Guide
+# =============================================================================
+---
+- name: "KubePilot Deployment Completion Guide"
+  hosts: bastion
+  gather_facts: true
+  become: false
+  
+  tags:
+    - guide
+    - post-deployment
+    - documentation
+  
+  tasks:
+    - name: "Import guide role"
+      import_role:
+        name: guide

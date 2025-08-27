@@ -6,6 +6,52 @@
   package_facts:
     manager: auto
 
+- name: "Check if Kubernetes repository is configured"
+  stat:
+    path: /etc/yum.repos.d/local.repo
+  register: kubernetes_repo_exists
+
+- name: "Fail if Kubernetes repository is not configured"
+  fail:
+    msg: "Kubernetes repository is not configured. Please run the repository setup task first."
+  when: not kubernetes_repo_exists.stat.exists
+
+- name: "Check if kubelet is installed with correct version"
+  set_fact:
+    kubelet_installed: "{{ 'kubelet' in ansible_facts.packages and ansible_facts.packages['kubelet'][0].version == kube_version_full }}"
+
+- name: "Check if kubeadm is installed with correct version"
+  set_fact:
+    kubeadm_installed: "{{ 'kubeadm' in ansible_facts.packages and ansible_facts.packages['kubeadm'][0].version == kube_version_full }}"
+
+- name: "Fix package manager state inconsistency (if needed)"
+  block:
+    - name: "Check if kubeadm binary exists"
+      stat:
+        path: /usr/bin/kubeadm
+      register: kubeadm_binary_exists
+
+    - name: "Reinstall kubeadm if binary is missing but package is installed"
+      yum:
+        name: "kubeadm-{{ kube_version_full }}"
+        state: present
+        disable_gpg_check: yes
+      when: 
+        - kubeadm_installed
+        - not kubeadm_binary_exists.stat.exists
+      register: kubeadm_reinstall_result
+
+    - name: "Reinstall kubelet if binary is missing but package is installed"
+      yum:
+        name: "kubelet-{{ kube_version_full }}"
+        state: present
+        disable_gpg_check: yes
+      when: 
+        - kubelet_installed
+        - not kubeadm_binary_exists.stat.exists
+      register: kubelet_reinstall_result
+  when: kubelet_installed or kubeadm_installed
+
 - name: "Install kubelet and kubeadm on worker nodes"
   yum:
     name:
@@ -13,7 +59,29 @@
       - "kubeadm-{{ kube_version_full }}"
     state: present
     disable_gpg_check: yes
-  when: "'kubelet' not in ansible_facts.packages or ansible_facts.packages['kubelet'][0].version != kube_version_full"
+  when: not kubelet_installed or not kubeadm_installed
+  register: kubernetes_install_result
+
+- name: "Verify kubelet installation"
+  command: kubelet --version
+  register: kubelet_version_check
+  changed_when: false
+  failed_when: kubelet_version_check.rc != 0
+  when: kubernetes_install_result.changed or kubelet_installed
+
+- name: "Verify kubeadm installation"
+  command: kubeadm version
+  register: kubeadm_version_check
+  changed_when: false
+  failed_when: kubeadm_version_check.rc != 0
+  when: kubernetes_install_result.changed or kubeadm_installed
+
+- name: "Display installed Kubernetes components"
+  debug:
+    msg: |
+      Kubernetes components installed on {{ inventory_hostname }}:
+      - Kubelet: {{ kubelet_version_check.stdout if kubelet_version_check.rc == 0 else 'NOT FOUND' }}
+      - Kubeadm: {{ kubeadm_version_check.stdout if kubeadm_version_check.rc == 0 else 'NOT FOUND' }}
 
 - name: "Ensure kubelet service is started and enabled"
   systemd:
@@ -22,9 +90,9 @@
     enabled: yes
     daemon_reload: yes
 
-- name: "Display installed Kubernetes components"
-  debug:
-    msg: |
-      Kubernetes components installed on {{ inventory_hostname }}:
-      - kubelet: {{ ansible_facts.packages['kubelet'][0].version if 'kubelet' in ansible_facts.packages else 'Not installed' }}
-      - kubeadm: {{ ansible_facts.packages['kubeadm'][0].version if 'kubeadm' in ansible_facts.packages else 'Not installed' }}
+- name: "Create kubelet service directory if it doesn't exist"
+  file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    mode: '0755'
+  when: kubernetes_install_result.changed

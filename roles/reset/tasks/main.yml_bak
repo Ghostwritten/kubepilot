@@ -1,0 +1,505 @@
+# =============================================================================
+# roles/reset/tasks/main.yml - Enhanced Kubernetes Cluster Reset Tasks
+# =============================================================================
+---
+- name: "Display reset phase information"
+  debug:
+    msg: |
+      🔄 KubePilot Reset Phase
+      ========================
+      Host: {{ inventory_hostname }}
+      Groups: {{ group_names }}
+      Reset Type: {{ 'Bastion' if 'bastion' in group_names else 'Kubernetes Node' }}
+  tags: ['reset', 'info']
+
+# =============================================================================
+# Kubernetes Node Reset Tasks (for control plane and worker nodes)
+# =============================================================================
+- name: "Reset Kubernetes cluster state with kubeadm"
+  shell: kubeadm reset -f
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['reset', 'kubeadm', 'k8s-nodes']
+
+- name: "Stop and disable kubelet service"
+  systemd:
+    name: kubelet
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['services', 'kubelet', 'k8s-nodes']
+
+- name: "Check if kubelet package is installed"
+  package_facts:
+    manager: auto
+  when: "'bastion' not in group_names"
+  tags: ['packages', 'check', 'k8s-nodes']
+
+- name: "Remove Kubernetes packages from nodes"
+  package:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "kubelet-{{ kube_version_full | default('*') }}"
+    - "kubelet"
+  when: 
+    - "'bastion' not in group_names"
+  become: true
+  ignore_errors: true
+  tags: ['packages', 'k8s-nodes']
+
+- name: "Remove Kubernetes packages from control plan"
+  package:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "kubeadm-{{ kube_version_full | default('*') }}"
+    - "kubectl-{{ kube_version_full | default('*') }}"
+    - "kubeadm" 
+    - "kubectl"
+  when: 
+    - inventory_hostname in groups['kube_control_plane']
+  become: true
+  ignore_errors: true
+  tags: ['packages', 'k8s-nodes']
+
+- name: "Remove Kubernetes component directories from nodes"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/kubernetes
+      /etc/systemd/system/kubelet.service
+    - /var/lib/kubelet
+    - /var/lib/etcd
+    - /var/run/kubernetes
+    - /var/log/pods
+    - /var/log/containers
+  become: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'directories', 'kubernetes', 'k8s-nodes']
+
+# =============================================================================
+# Enhanced Container Runtime Cleanup
+# =============================================================================
+- name: "Stop all running containers (containerd)"
+  shell: |
+    # Stop all running containers
+    if command -v ctr >/dev/null 2>&1; then
+      ctr -n k8s.io containers ls -q | xargs -r ctr -n k8s.io containers rm || true
+      ctr -n k8s.io images ls -q | xargs -r ctr -n k8s.io images rm || true
+      ctr namespaces ls | grep -v NAME | awk '{print $1}' | xargs -r -I {} sh -c 'ctr -n {} containers ls -q | xargs -r ctr -n {} containers rm' || true
+    fi
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'containers', 'containerd', 'k8s-nodes']
+
+- name: "Stop and disable container runtime services"
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    daemon_reload: true
+  loop:
+    - containerd
+    - docker
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'services', 'containers', 'k8s-nodes']
+
+- name: "Remove container runtime packages"
+  package:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - containerd.io
+    - containerd
+    - docker-ce
+    - docker-ce-cli
+    - docker.io
+    - docker
+    - runc
+  become: true
+  ignore_errors: true
+  when: 
+    - "'bastion' not in group_names"
+    - remove_container_runtime | default(true)
+  tags: ['packages', 'containers', 'k8s-nodes']
+
+- name: "Remove container runtime directories and configurations"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/containerd
+    - /etc/containerd
+    - /var/lib/docker
+    - /etc/docker
+    - /run/containerd
+    - /run/docker
+    - /var/run/docker.sock
+    - /var/run/containerd/containerd.sock
+  become: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'directories', 'containers', 'k8s-nodes']
+
+- name: "Remove container runtime binary files"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    # containerd binaries
+    - /usr/local/bin/containerd
+    - /usr/local/bin/containerd-shim
+    - /usr/local/bin/containerd-shim-runc-v1
+    - /usr/local/bin/containerd-shim-runc-v2
+    - /usr/local/bin/containerd-stress
+    - /usr/local/bin/containerd-rootless.sh
+    - /usr/local/bin/containerd-rootless-setuptool.sh
+    - /usr/local/bin/ctr
+    - /usr/local/bin/crictl
+    - /usr/local/bin/runc
+    - /usr/local/bin/nerdctl
+    # Alternative locations
+    - /usr/bin/containerd
+    - /usr/bin/containerd-shim
+    - /usr/bin/containerd-shim-runc-v1
+    - /usr/bin/containerd-shim-runc-v2
+    - /usr/bin/ctr
+    - /usr/bin/crictl
+    - /usr/bin/runc
+    - /usr/bin/nerdctl
+    # Docker binaries
+    - /usr/local/bin/docker
+    - /usr/local/bin/dockerd
+    - /usr/local/bin/docker-proxy
+    - /usr/bin/docker
+    - /usr/bin/dockerd
+    - /usr/bin/docker-proxy
+    # CNI plugins
+    - /opt/cni/bin
+  become: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'binaries', 'containers', 'k8s-nodes']
+
+- name: "Remove systemd service files for container runtime"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/containerd.service
+    - /etc/systemd/system/kubelet.service
+    - /usr/lib/systemd/system/containerd.service
+    - /lib/systemd/system/containerd.service
+    - /etc/systemd/system/docker.service
+    - /usr/lib/systemd/system/docker.service
+    - /lib/systemd/system/docker.service
+  become: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'systemd', 'containers', 'k8s-nodes']
+
+- name: "Remove CNI directories and configurations"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/cni/net.d
+    - /opt/cni
+    - /var/lib/cni
+    - /var/lib/calico
+    - /var/run/calico
+    - /run/flannel
+    - /var/lib/weave
+  become: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'directories', 'cni', 'k8s-nodes']
+
+- name: "Remove Kubernetes and CNI binary files from nodes"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/bin/kubelet
+    - /usr/bin/kubeadm
+    - /usr/bin/kubectl
+    - /usr/local/bin/kubelet
+    - /usr/local/bin/kubeadm
+    - /usr/local/bin/kubectl
+    - /usr/local/bin/calicoctl
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'binaries', 'k8s-nodes']
+
+- name: "Clean up network interfaces"
+  shell: |
+    set -e
+    # List of interfaces to remove
+    #interfaces="cni0 flannel.1 vxlan.calico  kube-bridge cbr0 kube-dummy-if tunl0 veth"
+    interfaces=" flannel.1 vxlan.calico  kube-bridge cbr0 kube-dummy-if"
+    
+    for interface in $interfaces; do
+      # Check for exact match
+      if ip link show "$interface" &>/dev/null; then
+        echo "Removing interface: $interface"
+        ip link delete "$interface" || echo "Failed to delete $interface"
+      fi
+      
+      # Check for pattern match (e.g., veth*)
+      if [[ "$interface" == "veth" ]]; then
+        ip link show | grep -o 'veth[^:]*' | while read veth_if; do
+          echo "Removing veth interface: $veth_if"
+          ip link delete "$veth_if" || echo "Failed to delete $veth_if"
+        done
+      fi
+    done
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'network', 'interfaces', 'k8s-nodes']
+
+- name: "Flush iptables rules"
+  shell: |
+    set -e
+    # Save current rules before flushing (optional)
+    iptables-save > /tmp/iptables-backup-$(date +%Y%m%d-%H%M%S) || true
+    
+    # IPv4 rules
+    iptables -F && iptables -X
+    iptables -t nat -F && iptables -t nat -X
+    iptables -t raw -F && iptables -t raw -X || true
+    iptables -t mangle -F && iptables -t mangle -X
+    iptables -t filter -F && iptables -t filter -X || true
+    
+    # Reset default policies
+    iptables -P INPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    iptables -P OUTPUT ACCEPT
+    
+    # IPv6 rules
+    ip6tables -F && ip6tables -X || true
+    ip6tables -t nat -F && ip6tables -t nat -X || true
+    ip6tables -t raw -F && ip6tables -t raw -X || true
+    ip6tables -t mangle -F && ip6tables -t mangle -X || true
+    ip6tables -t filter -F && ip6tables -t filter -X || true
+    
+    # Reset IPv6 default policies
+    ip6tables -P INPUT ACCEPT || true
+    ip6tables -P FORWARD ACCEPT || true
+    ip6tables -P OUTPUT ACCEPT || true
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'network', 'iptables', 'k8s-nodes']
+
+- name: "Clean up mount points"
+  shell: |
+    # Unmount kubelet mounts
+    mount | grep '/var/lib/kubelet' | awk '{print $3}' | xargs -r umount || true
+    # Unmount container mounts  
+    mount | grep '/var/lib/containerd' | awk '{print $3}' | xargs -r umount || true
+    mount | grep '/var/lib/docker' | awk '{print $3}' | xargs -r umount || true
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'mounts', 'k8s-nodes']
+
+- name: "Reload systemd daemon after cleanup"
+  systemd:
+    daemon_reload: true
+  become: true
+  when: "'bastion' not in group_names"
+  tags: ['systemd', 'reload', 'k8s-nodes']
+
+# =============================================================================
+# Bastion Node Reset Tasks (for bastion hosts)
+# =============================================================================
+- name: "Remove kubectl binary from bastion"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/bin/kubectl
+    - /usr/bin/kubectl
+  become: true
+  ignore_errors: true
+  when: "'bastion' in group_names"
+  tags: ['cleanup', 'binaries', 'bastion']
+
+- name: "Remove kubectl package from bastion (if installed via package manager)"
+  package:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "kubectl-{{ kube_version_full | default('*') }}"
+    - "kubectl"
+  become: true
+  ignore_errors: true
+  when: "'bastion' in group_names"
+  tags: ['packages', 'bastion']
+
+- name: "Remove kubeconfig directory from bastion (root user)"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /root/.kube
+    - /home/{{ ansible_user }}/.kube
+  become: true
+  ignore_errors: true
+  when: "'bastion' in group_names"
+  tags: ['cleanup', 'kubeconfig', 'bastion']
+
+- name: "Remove kubeconfig directory from bastion (current user)"
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: absent
+  ignore_errors: true
+  when: "'bastion' in group_names"
+  tags: ['cleanup', 'kubeconfig', 'bastion']
+
+- name: "Remove kubectl configuration from user profiles on bastion"
+  lineinfile:
+    path: "{{ item.path }}"
+    regexp: "{{ item.regexp }}"
+    state: absent
+  loop:
+    - { path: "/root/.bashrc", regexp: ".*kubectl.*" }
+    - { path: "/root/.zshrc", regexp: ".*kubectl.*" }
+    - { path: "/home/{{ ansible_user }}/.bashrc", regexp: ".*kubectl.*" }
+    - { path: "/home/{{ ansible_user }}/.zshrc", regexp: ".*kubectl.*" }
+    - { path: "{{ ansible_env.HOME }}/.bashrc", regexp: ".*kubectl.*" }
+    - { path: "{{ ansible_env.HOME }}/.zshrc", regexp: ".*kubectl.*" }
+  become: true
+  ignore_errors: true
+  when: "'bastion' in group_names"
+  tags: ['cleanup', 'profiles', 'bastion']
+
+- name: "Remove kubectl completion and aliases from bastion"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/bash_completion.d/kubectl
+    - /usr/share/bash-completion/completions/kubectl
+    - /root/.kube/kubectl-completion.sh
+    - /home/{{ ansible_user }}/.kube/kubectl-completion.sh
+    - "{{ ansible_env.HOME }}/.kube/kubectl-completion.sh"
+    - /root/.kube/kubectl-env.sh
+    - /home/{{ ansible_user }}/.kube/kubectl-env.sh
+    - "{{ ansible_env.HOME }}/.kube/kubectl-env.sh"
+  become: true
+  ignore_errors: true
+  when: "'bastion' in group_names"
+  tags: ['cleanup', 'completion', 'bastion']
+
+# =============================================================================
+# Final Cleanup and Verification
+# =============================================================================
+- name: "Remove log files and temporary data"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/log/kubernetes
+    - /var/log/calico
+    - /tmp/kubeadm-*
+    - /tmp/kubernetes-*
+    - /var/lib/kubelet/pki
+  become: true
+  ignore_errors: true
+  when: "'bastion' not in group_names"
+  tags: ['cleanup', 'logs', 'k8s-nodes']
+
+- name: "Restart network service (if requested)"
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - network
+    - NetworkManager
+  become: true
+  ignore_errors: true
+  when: 
+    - restart_network_services | default(false)
+    - "'bastion' not in group_names"
+  tags: ['services', 'network', 'optional']
+
+# =============================================================================
+# Verification Tasks
+# =============================================================================
+- name: "Verify kubectl removal on bastion"
+  command: which kubectl
+  register: kubectl_check
+  failed_when: false
+  changed_when: false
+  when: "'bastion' in group_names"
+  tags: ['verify', 'bastion']
+
+- name: "Verify kubeconfig removal on bastion"
+  stat:
+    path: "{{ ansible_env.HOME }}/.kube/config"
+  register: kubeconfig_check
+  when: "'bastion' in group_names"
+  tags: ['verify', 'bastion']
+
+- name: "Verify container runtime removal on k8s nodes"
+  stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/local/bin/containerd
+    - /etc/containerd/config.toml
+    - /usr/local/bin/ctr
+  register: containerd_check
+  when: "'bastion' not in group_names"
+  tags: ['verify', 'k8s-nodes']
+
+- name: "Display bastion reset completion status"
+  debug:
+    msg: |
+      ✅ Bastion reset completed on {{ inventory_hostname }}
+      
+      Verification Results:
+      - kubectl binary: {{ 'Removed' if kubectl_check.rc != 0 else 'Still present' }}
+      - kubeconfig: {{ 'Removed' if not kubeconfig_check.stat.exists else 'Still present' }}
+      
+      Bastion cleanup summary:
+      - Removed kubectl binaries
+      - Removed kubeconfig files
+      - Removed kubectl completion and aliases
+      - Cleaned up user profile configurations
+  when: "'bastion' in group_names"
+  tags: ['status', 'bastion']
+
+- name: "Display Kubernetes node reset completion status"
+  debug:
+    msg: |
+      ✅ Kubernetes node reset completed on {{ inventory_hostname }}
+      
+      Container Runtime Cleanup:
+      {% for item in containerd_check.results %}
+      - {{ item.item }}: {{ 'Removed' if not item.stat.exists else 'Still present' }}
+      {% endfor %}
+      
+      Node cleanup summary:
+      - Reset kubeadm configuration
+      - Stopped and removed Kubernetes services
+      - Removed Kubernetes packages and binaries
+      - Removed container runtime (containerd/docker)
+      - Cleaned up network configurations and interfaces
+      - Removed CNI and container runtime configs
+      - Flushed iptables rules
+      - Cleaned up mount points and logs
+  when: "'bastion' not in group_names"
+  tags: ['status', 'k8s-nodes']
+
+- name: "Display final reset completion status"
+  debug:
+    msg: "🎯 Complete reset operation finished on {{ inventory_hostname }} ({{ 'Bastion' if 'bastion' in group_names else 'Kubernetes Node' }})"
+  tags: ['status']

@@ -1,0 +1,43 @@
+# =============================================================================
+# Kubernetes Role Environment-Specific Variables
+# =============================================================================
+# This file contains variables that are specific to the current environment
+# These variables override defaults but are not meant to be user-configurable
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Environment Detection
+# -----------------------------------------------------------------------------
+# Detect if running in offline mode
+kubelet_offline_mode: "{{ offline_mode | default(false) }}"
+
+# -----------------------------------------------------------------------------
+# Dynamic Configuration
+# -----------------------------------------------------------------------------
+# Set cluster DNS based on service CIDR
+kubelet_cluster_dns: "{{ (kube_service_cidr | default('10.96.0.0/12')).split('/')[0] | default('10.96.0.10') }}"
+
+# -----------------------------------------------------------------------------
+# Security Context
+# -----------------------------------------------------------------------------
+# Production environment settings
+kubelet_production_mode: "{{ (ansible_env.ENVIRONMENT | default('development')) == 'production' }}"
+
+# Adjust security settings for production
+kubelet_fail_swap_on: "{{ kubelet_production_mode | ternary(true, false) }}"
+kubelet_protect_kernel_defaults: "{{ kubelet_production_mode | ternary(true, false) }}"
+
+# -----------------------------------------------------------------------------
+# Resource Allocation
+# -----------------------------------------------------------------------------
+# Adjust resource limits based on node type
+kubelet_node_type: "{{ 'control-plane' if inventory_hostname in groups['kube_control_plane'] else 'worker' }}"
+
+# Control plane nodes get more resources
+kubelet_max_pods: "{{ kubelet_node_type == 'control-plane' | ternary(110, 250) }}"
+
+# -----------------------------------------------------------------------------
+# Network Configuration
+# -----------------------------------------------------------------------------
+# Use host network for control plane nodes in single-node clusters
+kubelet_use_host_network: "{{ groups['kube_control_plane'] | length == 1 and inventory_hostname in groups['kube_control_plane'] }}" 

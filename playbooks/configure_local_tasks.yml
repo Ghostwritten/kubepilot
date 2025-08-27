@@ -2,116 +2,128 @@
 # playbooks/configure_local_tasks.yml - Local kubectl Configuration Tasks
 # =============================================================================
 ---
-- name: "Configure local kubectl access"
-  hosts: localhost
-  gather_facts: false
-  connection: local
-  vars:
-    local_kubectl_dir: "{{ ansible_env.HOME }}/.kube"
-    cluster_name: "{{ kubepilot_cluster_name | default('kubepilot-cluster') }}"
-    control_plane_host: "{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}"
-    control_plane_user: "{{ hostvars[groups['kube_control_plane'][0]].ansible_user }}"
+# =============================================================================
+# Local kubectl Configuration Tasks
+# =============================================================================
+# This file contains tasks for configuring local kubectl access
+# =============================================================================
 
-  tasks:
-    - name: "Display local kubectl configuration phase"
-      debug:
-        msg: |
-          🔧 KubePilot Local kubectl Configuration
-          ======================================
-          Cluster: {{ cluster_name }}
-          Control Plane: {{ control_plane_host }}
-          Local kubectl dir: {{ local_kubectl_dir }}
+- name: "Display local kubectl configuration phase"
+  debug:
+    msg: |
+      🔧 KubePilot Local kubectl Configuration
+      ======================================
+      Cluster: {{ kubepilot_cluster_name | default('kubepilot-cluster') }}
+      Control Plane: {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}
+      Local kubectl dir: {{ ansible_env.HOME }}/.kube
 
-    - name: "Check if kubectl is installed locally"
-      command: which kubectl
-      register: kubectl_check
-      failed_when: false
-      changed_when: false
+- name: "Check if kubectl is installed locally"
+  command: which kubectl
+  register: kubectl_check
+  failed_when: false
+  changed_when: false
 
-    - name: "Install kubectl locally (if not installed)"
-      block:
-        - name: "Download kubectl binary (online mode)"
-          get_url:
-            url: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ kube_download_arch }}/kubectl"
-            dest: /usr/local/bin/kubectl
-            mode: '0755'
-            validate_certs: false
-          when: offline_mode | default(false) == false
-
-        - name: "Download kubectl binary (offline mode)"
-          get_url:
-            url: "{{ files_repo }}/kubectl"
-            dest: /usr/local/bin/kubectl
-            mode: '0755'
-            validate_certs: false
-          when: offline_mode | default(true) == true
-
-        - name: "Verify kubectl installation"
-          command: kubectl version --client
-          register: kubectl_version
-          changed_when: false
-      when: kubectl_check.rc != 0
-
-    - name: "Create local .kube directory"
-      file:
-        path: "{{ local_kubectl_dir }}"
-        state: directory
+- name: "Install kubectl locally (if not installed)"
+  block:
+    - name: "Download kubectl binary (online mode)"
+      get_url:
+        url: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ kube_download_arch }}/kubectl"
+        dest: /usr/local/bin/kubectl
         mode: '0755'
+        validate_certs: false
+      when: offline_mode | default(false) == false
 
-    - name: "Copy kubeconfig from control plane"
-      fetch:
-        src: /etc/kubernetes/admin.conf
-        dest: "{{ local_kubectl_dir }}/config"
-        flat: yes
-      delegate_to: "{{ groups['kube_control_plane'][0] }}"
+    - name: "Download kubectl binary (offline mode)"
+      get_url:
+        url: "{{ files_repo }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+        validate_certs: false
+      when: offline_mode | default(false) == true
 
-    - name: "Update kubeconfig server address"
-      replace:
-        path: "{{ local_kubectl_dir }}/config"
-        regexp: 'server: https://127\.0\.0\.1:6443'
-        replace: "server: https://{{ control_plane_host }}:6443"
-
-    - name: "Set proper permissions on kubeconfig"
-      file:
-        path: "{{ local_kubectl_dir }}/config"
-        mode: '0600'
-
-    - name: "Test kubectl connectivity"
-      command: kubectl cluster-info
-      register: cluster_info
+    - name: "Verify kubectl installation"
+      command: kubectl version --client
+      register: kubectl_version
       changed_when: false
+  when: kubectl_check.rc != 0
+  become: true
 
-    - name: "Display cluster information"
-      debug:
-        msg: |
-          ✅ Local kubectl configuration completed successfully!
-          
-          Cluster Information:
-          {{ cluster_info.stdout }}
-          
-          Usage:
-          - kubectl get nodes
-          - kubectl get pods --all-namespaces
-          - kubectl get services --all-namespaces
+- name: "Create local .kube directory"
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0755'
+  become: true
 
-    - name: "Create kubectl completion script"
-      copy:
-        content: |
-          # kubectl completion for bash
-          source <(kubectl completion bash)
-          
-          # kubectl completion for zsh
-          source <(kubectl completion zsh)
-        dest: "{{ local_kubectl_dir }}/kubectl-completion.sh"
-        mode: '0644'
+- name: "Copy kubeconfig from control plane"
+  fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    flat: yes
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  become: true
 
-    - name: "Display completion setup instructions"
-      debug:
-        msg: |
-          📝 To enable kubectl completion, add to your shell profile:
-          
-          For bash (~/.bashrc):
-          source ~/.kube/kubectl-completion.sh
-          
-          For zsh (~/.zshrc):
-          source ~/.kube/kubectl-completion.sh 
+- name: "Update kubeconfig server address"
+  replace:
+    path: "{{ ansible_env.HOME }}/.kube/config"
+    regexp: 'server: https://127\.0\.0\.1:6443'
+    replace: "server: https://{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443"
+
+- name: "Set proper permissions on kubeconfig"
+  file:
+    path: "{{ ansible_env.HOME }}/.kube/config"
+    mode: '0600'
+
+- name: "Test kubectl connectivity"
+  command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+  retries: 3
+  delay: 5
+
+- name: "Display cluster information"
+  debug:
+    msg: |
+      ✅ Local kubectl configuration completed successfully!
+      
+      Cluster Information:
+      {{ cluster_info.stdout }}
+      
+      Usage:
+      - kubectl get nodes
+      - kubectl get pods --all-namespaces
+      - kubectl get services --all-namespaces
+
+- name: "Create kubectl completion script"
+  copy:
+    content: |
+      #!/bin/bash
+      # kubectl completion for bash
+      if [ -n "$BASH_VERSION" ]; then
+        source <(kubectl completion bash)
+        alias k=kubectl
+        complete -F __start_kubectl k
+      fi
+      
+      # kubectl completion for zsh
+      if [ -n "$ZSH_VERSION" ]; then
+        source <(kubectl completion zsh)
+        alias k=kubectl
+        compdef __start_kubectl k
+      fi
+    dest: "{{ ansible_env.HOME }}/.kube/kubectl-completion.sh"
+    mode: '0755'
+
+- name: "Display completion setup instructions"
+  debug:
+    msg: |
+      📝 To enable kubectl completion, add to your shell profile:
+      
+      For bash (~/.bashrc):
+      echo "source ~/.kube/kubectl-completion.sh" >> ~/.bashrc
+      
+      For zsh (~/.zshrc):
+      echo "source ~/.kube/kubectl-completion.sh" >> ~/.zshrc
+      
+      Or run directly:
+      source ~/.kube/kubectl-completion.sh

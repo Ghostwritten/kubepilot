@@ -26,6 +26,15 @@
     - name: "Check if bastion group exists in inventory"
       set_fact:
         bastion_exists: "{{ groups['bastion'] is defined and groups['bastion'] | length > 0 }}"
+      register: bastion_check_result
+
+    - name: "Debug bastion check result"
+      debug:
+        msg: |
+          Bastion check result:
+          - bastion_exists: {{ bastion_exists }}
+          - groups['bastion'] defined: {{ groups['bastion'] is defined }}
+          - groups['bastion'] length: {{ groups['bastion'] | default([]) | length }}
 
     - name: "Debug groups information"
       debug:
@@ -46,13 +55,22 @@
         bastion_available: "{{ bastion_exists and (bastion_ping_result.results | selectattr('ping', 'equalto', 'pong') | list | length > 0) }}"
       when: bastion_exists
 
+    - name: "Set default bastion availability"
+      set_fact:
+        bastion_available: false
+      when: not bastion_exists
+
+    - name: "Set final bastion availability"
+      set_fact:
+        bastion_available: "{{ bastion_available | default(false) }}"
+
     - name: "Display configuration decision"
       debug:
         msg: |
           📊 Configuration Decision:
           =========================
-          Bastion group exists: {{ bastion_exists }}
-          Bastion hosts reachable: {{ bastion_available | default(false) }}
+          Bastion group exists: {{ bastion_exists | default(false) }}
+          Bastion hosts reachable: {{ bastion_available }}
           
           {% if bastion_available %}
           ✅ Will configure bastion host
@@ -61,19 +79,19 @@
           {% endif %}
 
     - name: "Configure bastion host (if available)"
-      include_tasks: configure_bastion_tasks.yml
-      when: bastion_available | default(false)
+      include_tasks: "{{ playbook_dir }}/configure_bastion_tasks.yml"
+      when: bastion_available
 
     - name: "Configure local kubectl (if no bastion)"
-      include_tasks: configure_local_tasks.yml
-      when: not (bastion_available | default(false))
+      include_tasks: "{{ playbook_dir }}/configure_local_tasks.yml"
+      when: not bastion_available
 
     - name: "Display final configuration result"
       debug:
         msg: |
           🎉 Smart kubectl configuration completed!
           
-          {% if bastion_available | default(false) %}
+          {% if bastion_available %}
           ✅ Bastion host configured successfully
           📍 Access cluster via: ssh appuser@{{ groups['bastion'][0] }}
           {% else %}

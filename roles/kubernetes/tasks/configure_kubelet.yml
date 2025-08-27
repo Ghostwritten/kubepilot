@@ -1,0 +1,156 @@
+# =============================================================================
+# roles/kubernetes/tasks/configure_kubelet.yml - Configure Kubelet
+# =============================================================================
+---
+- name: "Create kubelet configuration directory"
+  file:
+    path: /var/lib/kubelet
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "Create kubelet pki directory"
+  file:
+    path: /var/lib/kubelet/pki
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "Generate kubelet configuration file"
+  template:
+    src: kubelet-config.yaml.j2
+    dest: /var/lib/kubelet/config.yaml
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+  register: kubelet_config_generated
+
+- name: "Create kubelet configuration directory"
+  file:
+    path: /etc/kubernetes
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "Create kubelet manifests directory"
+  file:
+    path: /etc/kubernetes/manifests
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "Create kubelet SSL directory"
+  file:
+    path: /etc/kubernetes/ssl
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "Remove incorrect kubelet.conf if exists"
+  file:
+    path: /etc/kubernetes/kubelet.conf
+    state: absent
+  become: true
+  when: inventory_hostname in groups['kube_control_plane']
+
+- name: "Generate kubelet environment file"
+  template:
+    src: kubelet.env.j2
+    dest: /etc/kubernetes/kubelet.env
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+  register: kubelet_env_generated
+
+- name: "Generate kubelet systemd service file"
+  template:
+    src: kubelet.service.j2
+    dest: /etc/systemd/system/kubelet.service
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+  register: kubelet_service_generated
+  notify: reload systemd
+
+- name: "Create kubelet bootstrap kubeconfig directory"
+  file:
+    path: /etc/kubernetes
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+  when: inventory_hostname in groups['kube_control_plane']
+
+- name: "Create bootstrap kubeconfig for kubelet"
+  copy:
+    content: |
+      apiVersion: v1
+      kind: Config
+      clusters:
+      - cluster:
+          server: https://{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443
+          insecure-skip-tls-verify: true
+        name: bootstrap
+      contexts:
+      - context:
+          cluster: bootstrap
+          user: kubelet-bootstrap
+        name: bootstrap
+      current-context: bootstrap
+      users:
+      - name: kubelet-bootstrap
+        user:
+          token: ""
+    dest: /etc/kubernetes/bootstrap-kubelet.conf
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+
+- name: "Display kubelet configuration status"
+  debug:
+    msg: |
+      ✅ Kubelet configuration completed:
+      - Config file: {{ kubelet_config_generated.changed | ternary('Created', 'Already exists') }}
+      - Environment file: {{ kubelet_env_generated.changed | ternary('Created', 'Already exists') }}
+      - Service file: {{ kubelet_service_generated.changed | ternary('Created', 'Already exists') }}
+      - Directories: /etc/kubernetes, /var/lib/kubelet created
+
+- name: "Start and enable kubelet service (only for worker nodes)"
+  systemd:
+    name: kubelet
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true
+  when: inventory_hostname not in groups['kube_control_plane']
+
+- name: "Verify kubelet service is running (only for worker nodes)"
+  shell: systemctl is-active kubelet
+  register: kubelet_status_check
+  retries: 5
+  delay: 3
+  until: kubelet_status_check.stdout == "active"
+  changed_when: false
+  when: inventory_hostname not in groups['kube_control_plane']
+
+- name: "Display kubelet service status"
+  debug:
+    msg: |
+      ✅ Kubelet service status: {{ kubelet_status_check.stdout | default('not started (control plane node)') }}
+      - Service started: {{ (kubelet_status_check.stdout | default('')) == 'active' }}
+      - Configuration completed successfully 

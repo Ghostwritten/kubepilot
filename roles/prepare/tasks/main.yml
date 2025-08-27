@@ -1,0 +1,86 @@
+# =============================================================================
+# roles/prepare/tasks/main.yml - Simple Cluster Status Check
+# =============================================================================
+---
+- name: "Check if cluster exists"
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf_check
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+
+- name: "Set cluster exists fact"
+  set_fact:
+    cluster_exists: "{{ admin_conf_check.stat.exists }}"
+
+- name: "Handle existing cluster - display guidance and exit"
+  block:
+    - name: "Create existing cluster guidance file"
+      copy:
+        content: |
+          EXISTING CLUSTER DETECTED
+          
+          A Kubernetes cluster already exists on this system.
+          
+          To continue with existing cluster:
+          ansible-playbook -i inventory/k8s01/inventory.ini cluster.yml --skip-tags prepare
+          
+          To reset and redeploy cluster:
+          ansible-playbook -i inventory/k8s01/inventory.ini reset.yml
+          ansible-playbook -i inventory/k8s01/inventory.ini cluster.yml
+        dest: "/tmp/kubepilot-cluster-status.txt"
+        mode: '0644'
+
+    - name: "Display existing cluster guidance"
+      shell: cat /tmp/kubepilot-cluster-status.txt
+      register: cluster_status_output
+
+    - name: "Show existing cluster guidance"
+      debug:
+        var: cluster_status_output.stdout_lines
+
+    - name: "Remove guidance file"
+      file:
+        path: "/tmp/kubepilot-cluster-status.txt"
+        state: absent
+
+    - name: "Display graceful exit message"
+      debug:
+        msg: "Deployment completed successfully. Please use the commands shown above to manage your existing cluster."
+
+    - name: "Exit playbook gracefully"
+      fail:
+        msg: "Existing cluster detected. Deployment stopped to prevent overwrite. Please use the commands shown above to manage your existing cluster."
+
+  when: cluster_exists
+
+- name: "Handle fresh deployment - display ready message"
+  block:
+    - name: "Create fresh deployment message file"
+      copy:
+        content: |
+          FRESH DEPLOYMENT READY
+          
+          No existing cluster detected. Proceeding with fresh deployment...
+          
+          Cluster will be deployed with:
+          - Control Plane: {{ groups['kube_control_plane'] | join(', ') }}
+          - Worker Nodes: {{ groups['kube_node'] | join(', ') }}
+          - Kubernetes Version: {{ kube_version }}
+          - CNI Plugin: Calico
+        dest: "/tmp/kubepilot-cluster-status.txt"
+        mode: '0644'
+
+    - name: "Display fresh deployment message"
+      shell: cat /tmp/kubepilot-cluster-status.txt
+      register: cluster_status_output
+
+    - name: "Show fresh deployment message"
+      debug:
+        var: cluster_status_output.stdout_lines
+
+    - name: "Remove message file"
+      file:
+        path: "/tmp/kubepilot-cluster-status.txt"
+        state: absent
+
+  when: not cluster_exists

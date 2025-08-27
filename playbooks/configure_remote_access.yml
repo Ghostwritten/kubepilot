@@ -1,0 +1,202 @@
+# =============================================================================
+# playbooks/configure_remote_access.yml - Configure Remote Cluster Access
+# =============================================================================
+---
+- name: "Configure Remote Kubernetes Cluster Access"
+  hosts: bastion
+  gather_facts: true
+  become: false
+  
+  vars:
+    # Configuration options
+    install_kubectl: true
+    configure_kubectl: true
+    create_aliases: true
+    setup_completion: true
+    
+  tasks:
+    - name: "Display remote access configuration phase"
+      debug:
+        msg: |
+          🔧 KubePilot Remote Access Configuration
+          =========================================
+          Bastion: {{ inventory_hostname }}
+          Target Cluster: {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443
+          
+          This playbook configures kubectl access to your Kubernetes cluster
+          following industry best practices for security and usability.
+
+    - name: "Check if kubectl is installed"
+      command: which kubectl
+      register: kubectl_check
+      failed_when: false
+      changed_when: false
+
+    - name: "Install kubectl (if requested and not installed)"
+      block:
+        - name: "Download kubectl binary (online mode)"
+          get_url:
+            url: "{{ kube_download_mirror }}/release/v{{ kube_version }}/bin/linux/{{ kube_download_arch }}/kubectl"
+            dest: /usr/local/bin/kubectl
+            mode: '0755'
+            validate_certs: false
+          when: offline_mode | default(false) == false
+
+        - name: "Download kubectl binary (offline mode)"
+          get_url:
+            url: "{{ files_repo }}/kubectl"
+            dest: /usr/local/bin/kubectl
+            mode: '0755'
+            validate_certs: false
+          when: offline_mode | default(true) == true
+
+        - name: "Verify kubectl installation"
+          command: kubectl version --client
+          register: kubectl_version
+          changed_when: false
+      when: 
+        - install_kubectl | default(true)
+        - kubectl_check.rc != 0
+
+
+
+    - name: "Configure kubectl access (if requested)"
+      block:
+        - name: "Create .kube directory"
+          file:
+            path: "{{ ansible_env.HOME }}/.kube"
+            state: directory
+            mode: '0755'
+
+        - name: "Copy kubeconfig from control plane"
+          fetch:
+            src: /etc/kubernetes/admin.conf
+            dest: "{{ ansible_env.HOME }}/.kube/config"
+            flat: yes
+          delegate_to: "{{ groups['kube_control_plane'][0] }}"
+
+        - name: "Update kubeconfig server address for remote access"
+          replace:
+            path: "{{ ansible_env.HOME }}/.kube/config"
+            regexp: 'server: https://127\.0\.0\.1:6443'
+            replace: "server: https://{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443"
+
+        - name: "Set proper permissions on kubeconfig"
+          file:
+            path: "{{ ansible_env.HOME }}/.kube/config"
+            mode: '0600'
+
+        - name: "Test kubectl connectivity"
+          command: kubectl cluster-info
+          register: cluster_info
+          changed_when: false
+
+        - name: "Display cluster information"
+          debug:
+            msg: |
+              ✅ kubectl configuration completed successfully!
+              
+              Cluster Information:
+              {{ cluster_info.stdout }}
+              
+              Usage:
+              - kubectl get nodes
+              - kubectl get pods --all-namespaces
+              - kubectl get services --all-namespaces
+      when: configure_kubectl | default(true)
+
+    - name: "Setup kubectl aliases and completion (if requested)"
+      block:
+        - name: "Create kubectl completion script"
+          copy:
+            content: |
+              # kubectl completion for bash
+              source <(kubectl completion bash)
+              
+              # kubectl completion for zsh
+              source <(kubectl completion zsh)
+            dest: "{{ ansible_env.HOME }}/.kube/kubectl-completion.sh"
+            mode: '0644'
+          when: setup_completion | default(true)
+
+        - name: "Create kubectl alias and environment setup"
+          copy:
+            content: |
+              # Kubernetes kubectl configuration
+              export KUBECONFIG={{ ansible_env.HOME }}/.kube/config
+              alias k='kubectl'
+              alias kg='kubectl get'
+              alias kd='kubectl describe'
+              alias kl='kubectl logs'
+              alias kex='kubectl exec -it'
+              
+              # Source completion if available
+              if [ -f {{ ansible_env.HOME }}/.kube/kubectl-completion.sh ]; then
+                  source {{ ansible_env.HOME }}/.kube/kubectl-completion.sh
+              fi
+            dest: "{{ ansible_env.HOME }}/.kube/kubectl-env.sh"
+            mode: '0644'
+          when: create_aliases | default(true)
+
+        - name: "Display setup instructions"
+          debug:
+            msg: |
+              📝 kubectl environment setup:
+              
+              To enable kubectl environment, add to your shell profile:
+              
+              For bash (~/.bashrc):
+              source {{ ansible_env.HOME }}/.kube/kubectl-env.sh
+              
+              For zsh (~/.zshrc):
+              source {{ ansible_env.HOME }}/.kube/kubectl-env.sh
+              
+              Or run manually:
+              source {{ ansible_env.HOME }}/.kube/kubectl-env.sh
+      when: create_aliases | default(true) or setup_completion | default(true)
+
+    - name: "Display security recommendations"
+      debug:
+        msg: |
+          🔒 Security Recommendations:
+          ============================
+          
+          1. RBAC Configuration:
+             - Create specific user accounts with appropriate permissions
+             - Avoid using admin.conf for regular operations
+             - Implement role-based access control
+          
+          2. Network Security:
+             - Configure network policies
+             - Use service mesh for microservices security
+             - Implement proper ingress/egress rules
+          
+          3. Monitoring and Compliance:
+             - Enable audit logging
+             - Set up monitoring and alerting
+             - Implement backup and disaster recovery
+          
+          4. Best Practices:
+             - Use namespaces for resource isolation
+             - Implement resource limits and requests
+             - Use secrets management for sensitive data
+             - Regular security updates and patches
+          
+          📚 Documentation:
+          - Kubernetes Security: https://kubernetes.io/docs/concepts/security/
+          - RBAC Configuration: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+          - Network Policies: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+
+    - name: "Display final status"
+      debug:
+        msg: |
+          🎉 Remote access configuration completed!
+          
+          Your kubectl is now configured to access the Kubernetes cluster at:
+          {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443
+          
+          Next steps:
+          1. Test connectivity: kubectl cluster-info
+          2. Check nodes: kubectl get nodes
+          3. Explore resources: kubectl get pods --all-namespaces
+          4. Set up monitoring and security as recommended above

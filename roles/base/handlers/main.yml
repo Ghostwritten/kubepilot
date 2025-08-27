@@ -33,7 +33,7 @@
   listen: reload firewall
 
 - name: restart ufw
-  ufw:
+  community.general.ufw:
     state: reloaded
   become: true
   listen: reload firewall
@@ -53,18 +53,9 @@
     state: refreshed
   become: true
 
+# Fixed YUM cache handlers
 - name: rebuild yum cache
+  shell: yum clean all && yum makecache
   when: ansible_os_family == "RedHat"
   become: true
-  block:
-    - name: Clean old YUM cache
-      ansible.builtin.command: yum clean all
-      args:
-        warn: false
-      changed_when: false
-
-    - name: Make new YUM cache
-      ansible.builtin.command: yum makecache
-      args:
-        warn: false
-      changed_when: false
+  changed_when: false

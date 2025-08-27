@@ -1,0 +1,28 @@
+---
+# =============================================================================
+# KubePilot Ansible Collections Requirements (Essential)
+# =============================================================================
+# This file defines essential Ansible collections for KubePilot
+# Install with: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  # Essential collections for system management
+  - name: ansible.posix
+    version: ">=2.1.0"
+    
+  - name: community.general
+    version: ">=11.0.0"
+    
+  # Kubernetes and container management
+  - name: kubernetes.core
+    version: ">=5.0.0"
+    
+  - name: community.docker
+    version: ">=4.0.0"
+    
+  # Cryptography for certificates
+  - name: community.crypto
+    version: ">=2.22.0"
+
+# Roles from Ansible Galaxy (if any)
+roles: []

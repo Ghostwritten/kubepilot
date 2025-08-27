@@ -1,0 +1,14 @@
+# =============================================================================
+# Kubernetes Role Handlers
+# =============================================================================
+
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+  become: true
+
+- name: restart kubelet
+  systemd:
+    name: kubelet
+    state: restarted
+  become: true 

@@ -1,0 +1,18 @@
+# =============================================================================
+# playbooks/prepare.yml - Cluster Preparation and Status Check
+# =============================================================================
+---
+- name: "KubePilot Cluster Preparation and Status Check"
+  hosts: kube_control_plane[0]
+  gather_facts: true
+  become: false
+  
+  tags:
+    - prepare
+    - status-check
+    - pre-deployment
+  
+  tasks:
+    - name: "Import prepare role"
+      import_role:
+        name: prepare

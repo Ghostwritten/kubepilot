@@ -15,7 +15,7 @@
     - name: "Safety check: Confirm cluster reset operation"
       pause:
         prompt: |
-          ⚠️  WARNING: This will completely destroy your Kubernetes cluster!
+          WARNING: This will completely destroy your Kubernetes cluster!
           
           This operation will:
           - Remove all Kubernetes components and configurations
@@ -61,7 +61,7 @@
     - name: "Display reset completion status"
       debug:
         msg: |
-          ✅ Cluster reset completed successfully!
+          Cluster reset completed successfully!
           
           Next steps:
           1. Verify all services are stopped

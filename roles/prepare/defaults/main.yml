@@ -1,0 +1,15 @@
+# =============================================================================
+# roles/prepare/defaults/main.yml - Prepare Role Default Variables
+# =============================================================================
+---
+# Force deployment flag (use with --extra-vars "force_deploy=true")
+force_deploy: false
+
+# Skip preparation flag (use with --extra-vars "skip_prepare=true")
+skip_prepare: false
+
+# Cluster status check timeout
+cluster_check_timeout: 30
+
+# Verbose output
+prepare_verbose: false

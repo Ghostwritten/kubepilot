@@ -8,23 +8,44 @@
 # -----------------------------------------------------------------------------
 # Global Settings & Feature Flags
 # -----------------------------------------------------------------------------
-kubepilot_version: "1.0.0"
-kubepilot_build_date: "{{ ansible_date_time.date }}"
-
+# Offline deployment configuration
 offline_mode: true
-http_server: "http://192.168.22.130"
+http_server: "http://192.168.22.117"
 
+# Proxy configuration for online mode
 http_proxy: "http://192.168.21.101:7890"
 https_proxy: "http://192.168.21.101:7890"
-no_proxy: "10.0.0.0/8,192.168.16.0/20,localhost,127.0.0.1,registry.ocp.local,.svc,.svc.cluster-27,.coding.net,.tencentyun.com,.myqcloud.com,harbor.bsgchina.com"
+no_proxy: "10.0.0.0/8,192.168.16.0/20,localhost,127.0.0.1,registry.ocp.local,registry.test.local,.svc,.svc.cluster-27,.coding.net,.tencentyun.com,.myqcloud.com,harbor.bsgchina.com"
+
+# -----------------------------------------------------------------------------
+# Ansible Connection Configuration
+# -----------------------------------------------------------------------------
+# SSH connection settings
+ansible_user: appuser
+ansible_ssh_pass: "1qaz@WSX"
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_ssh_pipelining: true
+
+# Privilege escalation
+ansible_become: true
+ansible_become_method: sudo
+ansible_become_user: root
+
+# Connection optimization
+ansible_ssh_retries: 3
+ansible_connect_timeout: 30
+ansible_command_timeout: 30
+
+# Python interpreter path (prevents interpreter discovery warnings)
+ansible_python_interpreter: /usr/bin/python3
 
 # -----------------------------------------------------------------------------
 # Core Kubernetes Configuration
 # -----------------------------------------------------------------------------
 # Kubernetes binary version - supports latest stable releases
-kube_version: "1.31.10"
+kube_version: "1.31.9"
 kube_version_major_minor: "{{ kube_version.split('.')[0] }}.{{ kube_version.split('.')[1] }}"
-kube_version_full: "1.31.10-150500.1.1"
+kube_version_full: "1.31.9-150500.1.1"
 
 # Installation directories
 bin_dir: /usr/local/bin
@@ -34,15 +55,12 @@ k8s_manifests_dir: /etc/kubernetes/manifests
 # Architecture and platform settings
 image_arch: "amd64"
 k8s_download_arch: "x86_64"
-alt_arch_mapping:
-  amd64: "x86_64"
-  arm64: "aarch64"
 
 # -----------------------------------------------------------------------------
 # Container Runtime and Tools Versions
 # -----------------------------------------------------------------------------
 # Container runtime components
-containerd_version: "2.1.3"
+containerd_version: "1.7.27"
 containerd_use_systemd_cgroup: true
 containerd_max_container_log_line_size: 16384
 containerd_storage_dir: "/var/lib/containerd"
@@ -58,17 +76,19 @@ nerdctl_version: "2.1.2"
 crictl_version: "v1.33.0"
 
 # Additional tools and components
-helm_version: "v3.16.2"
-etcd_version: "3.5.15-0"
+helm_version: "v3.18.5"
+etcd_version: "3.5.21-0"
 coredns_version: "v1.11.1"
 
-# Netowork plugin
-calico_version: "v3.28.2"
+# Network plugin
+calico_version: "v3.26.1"
 
+# Additional tools (for download role)
+hpn_version: "v1.1"
 
-  # Container image settings
+# Container image settings
 pod_infra_image_repo: "{{ kube_image_repo }}/pause"
-pod_infra_image_tag: '3.9'
+pod_infra_image_tag: '3.10'
 
 # -----------------------------------------------------------------------------
 # Download Sources and Mirrors
@@ -78,21 +98,19 @@ kube_download_mirror: "https://dl.k8s.io"
 # Alternative mirror for China users:
 # kube_download_mirror: "https://mirrors.aliyun.com/kubernetes"
 
+# GitHub download mirror
+github_download_mirror: "https://github.com"
+
 # Image registry configuration
 kube_image_repo: "registry.k8s.io"
-registry_host: "registry.k8s.local"
+registry_host: "registry.test.local:5000"
 
 # -----------------------------------------------------------------------------
 # Offline Deployment Configuration
 # -----------------------------------------------------------------------------
 offline_k8s_download_dir: "{{ playbook_dir }}/../download"
 
-# Local file server for offline installations
-
-
 # Local package repositories for offline mode
-#yum_repo: "{{ http_server }}/rpms"
-#ubuntu_repo: "{{ http_server }}/debs"
 repository:
   yum_url: "{{ http_server }}/rpms"
   apt_url: "{{ http_server }}/debs"
@@ -103,7 +121,6 @@ files_repo: "{{ http_server }}/files"
 kubeadm_download_url: "{{ files_repo }}/kubeadm"
 kubectl_download_url: "{{ files_repo }}/kubectl"
 kubelet_download_url: "{{ files_repo }}/kubelet"
-#cni_download_url: "{{ files_repo }}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
 crictl_download_url: "{{ files_repo }}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
 runc_download_url: "{{ files_repo }}/runc.{{ image_arch }}"
 containerd_download_url: "{{ files_repo }}/containerd-{{ containerd_version }}-linux-{{ image_arch }}.tar.gz"
@@ -112,10 +129,6 @@ nerdctl_download_url: "{{ files_repo }}/nerdctl-{{ nerdctl_version }}-linux-{{ i
 # -----------------------------------------------------------------------------
 # Network Proxy Configuration
 # -----------------------------------------------------------------------------
-# HTTP/HTTPS proxy settings for downloads acceleration
-
-# Internal networks that should bypass proxy
-
 # Environment variables for proxy configuration
 proxy_env:
   http_proxy: "{{ http_proxy | default('') }}"
@@ -127,37 +140,22 @@ proxy_env:
 # -----------------------------------------------------------------------------
 # Insecure registries (for development/testing)
 containerd_insecure_registries:
-  "registry.k8s.local": "http://registry.k8s.local"
+  "registry.test.local:5000": "http://registry.test.local:5000"
 
 # Registry mirrors for improved download performance
 containerd_registries_mirrors:
-  - prefix: registry.k8s.local
+  - prefix: registry.test.local:5000
     skip_verify: true
     mirrors:
-      - host: https://registry.k8s.local
+      - host: http://registry.test.local:5000
         capabilities: ["pull", "resolve"]
         skip_verify: true
-  - prefix: docker.io
-    mirrors:
-      - host: https://docker.mirrors.ustc.edu.cn
-        capabilities: ["pull", "resolve"]
-      - host: https://registry.docker-cn.com
-        capabilities: ["pull", "resolve"]
-
-# Registry authentication (uncomment and configure as needed)
-# containerd_registry_auth:
-#   - registry: registry.k8s.local
-#     username: admin
-#     password: harbor12345
-#   - registry: docker.io
-#     username: your-username
-#     password: your-password
 
 # -----------------------------------------------------------------------------
 # Kubernetes Cluster Network Configuration
 # -----------------------------------------------------------------------------
 # Pod subnet (CIDR notation)
-kube_pod_cidr: "10.244.0.0/16"
+kube_pod_cidr: "10.88.0.0/16"
 
 # Service subnet (CIDR notation)
 kube_service_cidr: "10.96.0.0/12"
@@ -177,36 +175,59 @@ dns_servers:
   - 114.114.114.114
 
 # -----------------------------------------------------------------------------
+# Cluster Configuration
+# -----------------------------------------------------------------------------
+# Cluster-wide variables
+cluster_name: kubepilot-cluster
+
+# Feature gates
+feature_gates: ["EphemeralContainers=true", "HPAScaleToZero=true", "InPlacePodVerticalScaling=true"]
+
+# -----------------------------------------------------------------------------
+# Node Role Configuration
+# -----------------------------------------------------------------------------
+# Control plane specific variables
+k8s_role: master
+etcd_member: true
+
+# etcd specific configuration
+etcd_cluster_setup: true
+etcd_backup_enabled: true
+
+# Worker node specific variables
+kubelet_max_pods: 110
+
+# -----------------------------------------------------------------------------
 # System Configuration
 # -----------------------------------------------------------------------------
-# Python interpreter path (prevents interpreter discovery warnings)
-ansible_python_interpreter: /usr/bin/python3.9
-
-# System service configuration
-systemd_dir: /etc/systemd/system
-system_namespace: kube-system
-
-
-# Feature flags
+# Feature flags - 当前已实现的功能
 enable_metrics_server: true
-enable_ingress_nginx: true
-enable_cert_manager: false
-enable_prometheus: false
-enable_grafana: false
 
-# Backup and recovery
-backup_enabled: false
-backup_schedule: "0 2 * * *"  # Daily at 2 AM
-backup_retention_days: 7
-
-# Security settings
-rbac_enabled: true
-network_policy_enabled: false
-pod_security_policy_enabled: false
-
-# Logging
-log_level: "info"  # debug, info, warn, error
+# Logging configuration
+log_level: 2  # 统一为数字格式，与inventory.ini保持一致
 audit_log_enabled: false
+
+# -----------------------------------------------------------------------------
+# Kubelet Configuration Overrides (Optional)
+# -----------------------------------------------------------------------------
+# These settings override the defaults in roles/kubernetes/defaults/main.yml
+# Uncomment and modify as needed for your environment
+
+# kubelet_max_pods: 150  # Override default max pods
+# kubelet_system_reserved:
+#   cpu: "200m"
+#   memory: "200Mi"
+#   ephemeral-storage: "2Gi"
+# kubelet_kube_reserved:
+#   cpu: "200m"
+#   memory: "200Mi"
+#   ephemeral-storage: "2Gi"
+
+# -----------------------------------------------------------------------------
+# Time Synchronization
+# -----------------------------------------------------------------------------
+ntp_servers:
+  - 192.168.22.117
 
 # -----------------------------------------------------------------------------
 # Node Labels Configuration
@@ -219,3 +240,24 @@ node_labels:
   # Add more custom labels as needed
   # storage: "ssd"
   # gpu: "nvidia"
+
+# -----------------------------------------------------------------------------
+# 已移除的未使用变量说明
+# -----------------------------------------------------------------------------
+# 以下变量已被移除，因为它们未被项目中的任何角色或任务使用：
+# - kubepilot_version: 只在download角色中被错误引用，实际未使用
+# - kubepilot_build_date: 从未被使用
+# - enable_ingress_nginx: 功能未实现
+# - enable_cert_manager: 功能未实现  
+# - enable_prometheus: 功能未实现
+# - enable_grafana: 功能未实现
+# - backup_enabled: 功能未实现
+# - backup_schedule: 功能未实现
+# - backup_retention_days: 功能未实现
+# - rbac_enabled: 功能未实现
+# - network_policy_enabled: 功能未实现
+# - pod_security_policy_enabled: 功能未实现
+# - systemd_dir: 未找到使用
+# - system_namespace: 未找到使用
+# - alt_arch_mapping: 在roles/download/defaults/main.yml中已有定义，避免重复
+

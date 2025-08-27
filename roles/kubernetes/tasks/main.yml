@@ -18,6 +18,13 @@
     - install
     - binaries
 
+- name: "Configure kubelet before initialization"
+  import_tasks: configure_kubelet.yml
+  tags:
+    - kubernetes
+    - configure
+    - kubelet
+
 - name: "Initialize Kubernetes cluster"
   import_tasks: initialize_cluster.yml
   when: inventory_hostname == groups['kube_control_plane'][0]

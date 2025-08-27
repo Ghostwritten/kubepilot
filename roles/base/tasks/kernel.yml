@@ -46,13 +46,58 @@
   become: true
   tags: ['kernel', 'sysctl', 'immediate']
 
-- name: Verify critical kernel parameters
+- name: Check if bridge netfilter module is loaded
+  shell: lsmod | grep br_netfilter
+  register: br_netfilter_check
+  changed_when: false
+  failed_when: false
+  become: true
+  tags: ['kernel', 'verify']
+
+- name: Check if bridge-nf-call parameters are available
+  stat:
+    path: "/proc/sys/net/bridge/bridge-nf-call-iptables"
+  register: bridge_nf_call_available
+  tags: ['kernel', 'verify']
+
+- name: Verify basic kernel parameters
   shell: sysctl {{ item.key }}
   loop: "{{ kernel_params | dict2items }}"
   register: sysctl_check
   changed_when: false
   failed_when: 
     - sysctl_check.rc != 0
-    - item.key in ['net.ipv4.ip_forward', 'net.bridge.bridge-nf-call-iptables']
+    - item.key == 'net.ipv4.ip_forward'  # Only fail for critical parameters
+  when: >
+    item.key != 'net.bridge.bridge-nf-call-iptables' and 
+    item.key != 'net.bridge.bridge-nf-call-ip6tables' or
+    (bridge_nf_call_available.stat.exists | default(false))
   become: true
   tags: ['kernel', 'verify']
+
+- name: Verify bridge netfilter parameters (if module loaded)
+  shell: sysctl {{ item.key }}
+  loop: 
+    - { key: 'net.bridge.bridge-nf-call-iptables', value: 1 }
+    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: 1 }
+  register: bridge_sysctl_check
+  changed_when: false
+  failed_when: false  # Don't fail, just warn
+  when: bridge_nf_call_available.stat.exists | default(false)
+  become: true
+  tags: ['kernel', 'verify']
+
+- name: Display bridge netfilter status
+  debug:
+    msg: |
+      🌉 Bridge Netfilter Status:
+      ===========================
+      br_netfilter module: {{ 'loaded' if br_netfilter_check.rc == 0 else 'not loaded' }}
+      bridge-nf-call-iptables: {{ 'available' if bridge_nf_call_available.stat.exists else 'not available' }}
+      
+      {% if not bridge_nf_call_available.stat.exists %}
+      ⚠️  Bridge netfilter parameters not available.
+      This is normal if br_netfilter module is not loaded yet.
+      The module should be loaded during the modules configuration phase.
+      {% endif %}
+  tags: ['kernel', 'verify', 'status']

@@ -2,8 +2,14 @@
 # roles/download/tasks/generate_manifest.yml - Download Manifest Generation
 # =============================================================================
 ---
+- name: "Ensure download directory exists"
+  file:
+    path: "{{ offline_download_dir }}"
+    state: directory
+    mode: '0755'
+
 - name: "Generate download manifest file"
-  template:
+  copy:
     dest: "{{ offline_download_dir }}/download-manifest.yml"
     mode: '0644'
     content: |
@@ -30,7 +36,7 @@
           cni_plugins: "{{ cni_version }}"
         
         networking:
-          calico: "v3.28.2"
+          calico: "{{ calico_version }}"
         
         tools:
           helm: "{{ helm_version }}"

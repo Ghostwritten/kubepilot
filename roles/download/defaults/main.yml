@@ -2,27 +2,22 @@
 # roles/download/defaults/main.yml - Download Role Default Variables
 # =============================================================================
 ---
-# Container runtime component versions
-runc_version: "1.2.4"
-containerd_version: "2.1.3"
-nerdctl_version: "2.1.2"
-crictl_version: "v1.33.0"
-cni_version: "v1.7.1"
+# Note: Version variables are now defined in inventory/k8s01/group_vars/all.yml
+# This file contains only download-specific configurations
 
-# Additional tools and components
-helm_version: "v3.16.2"
-etcd_version: "3.5.15-0"
-coredns_version: "v1.11.1"
+# Download behavior configuration
+download_retries: 3
+download_delay: 5
+download_timeout: 300
+download_validate_checksums: true
+download_force_refresh: false
 
-# Netowork plugin
-calico_version: "v3.28.2"
-
-# Architecture and platform settings
-image_arch: "amd64"
-k8s_download_arch: "x86_64"
-alt_arch_mapping:
-  amd64: "x86_64"
-  arm64: "aarch64"
+# Offline mode configuration
+offline_mode: "{{ kubepilot_offline_mode | default(false) }}"
+offline_download_dir: "{{ playbook_dir }}/../download"
+offline_files_dir: "{{ offline_download_dir }}/files"
+offline_rpms_dir: "{{ offline_download_dir }}/rpms"
+offline_images_dir: "{{ offline_download_dir }}/images"
 
 # Download acceleration mirrors (configure as needed)
 download_mirrors:
@@ -41,20 +36,6 @@ download_mirrors:
 kube_download_mirror: "{{ download_mirrors.kubernetes.official }}"
 github_download_mirror: "{{ download_mirrors.github.official }}"
 
-# Download behavior configuration
-download_retries: 3
-download_delay: 5
-download_timeout: 300
-download_validate_checksums: true
-download_force_refresh: false
-
-# Offline mode configuration
-offline_mode: "{{ kubepilot_offline_mode | default(false) }}"
-offline_download_dir: "{{ playbook_dir }}/../download"
-offline_files_dir: "{{ offline_download_dir }}/files"
-offline_rpms_dir: "{{ offline_download_dir }}/rpms"
-offline_images_dir: "{{ offline_download_dir }}/images"
-
 # Container images to download
 container_images:
   # Kubernetes core images
@@ -62,7 +43,7 @@ container_images:
   kube_controller_manager: "registry.k8s.io/kube-controller-manager:v{{ kube_version }}"
   kube_scheduler: "registry.k8s.io/kube-scheduler:v{{ kube_version }}"
   kube_proxy: "registry.k8s.io/kube-proxy:v{{ kube_version }}"
-  pause: "registry.k8s.io/pause:3.9"
+  pause: "registry.k8s.io/pause:3.10"
   etcd: "registry.k8s.io/etcd:{{ etcd_version }}"
   coredns: "registry.k8s.io/coredns/coredns:{{ coredns_version }}"
   
@@ -85,7 +66,8 @@ download_urls:
   nerdctl: "{{ github_download_mirror }}/containerd/nerdctl/releases/download/v{{ nerdctl_version }}/nerdctl-{{ nerdctl_version }}-linux-{{ image_arch }}.tar.gz"
   crictl: "{{ github_download_mirror }}/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-{{ image_arch }}.tar.gz"
   cni_plugins: "{{ github_download_mirror }}/containernetworking/plugins/releases/download/{{ cni_version }}/cni-plugins-linux-{{ image_arch }}-{{ cni_version }}.tgz"
-  helm: "https://get.helm.sh/{{ helm_version }}/helm-{{ helm_version }}-linux-{{ image_arch }}.tar.gz"
+  helm: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ image_arch }}.tar.gz"
+  hpn: "{{ github_download_mirror }}/Ghostwritten/harpoon/releases/download/{{ hpn_version }}/hpn-linux-{{ image_arch }}"
 
 # Checksum validation URLs (for security)
 checksum_urls:

@@ -1,6 +1,6 @@
 ---
 - name: Base system configuration for Kubernetes nodes
-  hosts: all 
+  hosts: all:!bastion01
   become: true
   gather_facts: true
 

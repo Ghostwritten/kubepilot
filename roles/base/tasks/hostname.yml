@@ -22,6 +22,15 @@
   become: true
   tags: ['hostname', 'localhost']
 
+- name: Ensure local hostname mapping in /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ ansible_default_ipv4.address | default('127.0.0.1') }} {{ inventory_hostname }} {{ inventory_hostname }}.local"
+    state: present
+    regexp: "^{{ ansible_default_ipv4.address | default('127.0.0.1') }}\\s+{{ inventory_hostname }}"
+  become: true
+  tags: ['hostname', 'local']
+
 - name: Configure hostname resolution for cluster nodes
   lineinfile:
     path: /etc/hosts
@@ -32,7 +41,6 @@
   when: 
     - configure_hostname_resolution | default(true)
     - hostvars[item].ansible_host is defined or hostvars[item].ansible_default_ipv4 is defined
-    - item != inventory_hostname
   become: true
   notify: validate hostname resolution
   tags: ['hostname', 'cluster']
@@ -53,3 +61,21 @@
   become: true
   when: hostname_file is defined
   tags: ['hostname', 'persistent']
+
+- name: Verify hostname resolution configuration
+  shell: |
+    echo "=== /etc/hosts content ==="
+    cat /etc/hosts
+    echo ""
+    echo "=== Hostname resolution test ==="
+    nslookup {{ inventory_hostname }} 127.0.0.1 || echo "nslookup failed, checking /etc/hosts directly"
+    grep -E "^{{ ansible_default_ipv4.address | default('127.0.0.1') }}\\s+{{ inventory_hostname }}" /etc/hosts || echo "Local hostname mapping not found"
+  register: hostname_verification
+  become: true
+  tags: ['hostname', 'verify']
+
+- name: Display hostname verification results
+  debug:
+    var: hostname_verification.stdout_lines
+  when: hostname_verification.stdout_lines is defined
+  tags: ['hostname', 'verify']

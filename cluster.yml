@@ -2,16 +2,27 @@
 # cluster.yml - Main KubePilot Cluster Deployment Playbook
 # =============================================================================
 ---
-- name: "Phase 1: Configure SSH passwordless authentication"
-  import_playbook: playbooks/ssh_trust.yml
+#- name: "Phase 1: Configure SSH passwordless authentication"
+#  import_playbook: playbooks/ssh_trust.yml
+#  vars:
+#    phase_name: "SSH Configuration"
+#    phase_description: "Setup SSH key-based authentication between nodes"
+#  tags: 
+#    - ssh
+#    - authentication
+#    - phase1
+#    - optional
+
+- name: "Phase 1: Check cluster status and prepare for deployment"
+  import_playbook: playbooks/prepare.yml
   vars:
-    phase_name: "SSH Configuration"
-    phase_description: "Setup SSH key-based authentication between nodes"
+    phase_name: "Cluster Preparation"
+    phase_description: "Check existing cluster status and prepare for deployment"
   tags: 
-    - ssh
-    - authentication
+    - prepare
+    - status-check
     - phase1
-    - optional
+    - pre-deployment
 
 - name: "Phase 2: Configure host baseline settings"
   import_playbook: playbooks/base.yml
@@ -67,14 +78,24 @@
     - phase6
     - scaling
 
-- name: "Phase 7: Smart kubectl configuration"
-  import_playbook: playbooks/configure_smart_kubectl.yml
-  vars:
-    phase_name: "Smart kubectl Configuration"
-    phase_description: "Auto-detect and configure kubectl based on inventory"
-  tags: 
-    - smart_kubectl
-    - kubectl
-    - phase7
-    - access
+#- name: "Phase 7: Smart kubectl configuration"
+#  import_playbook: playbooks/configure_smart_kubectl.yml
+#  vars:
+#    phase_name: "Smart kubectl Configuration"
+#    phase_description: "Auto-detect and configure kubectl based on inventory"
+#  tags: 
+#    - smart_kubectl
+#    - kubectl
+#    - phase7
+#    - access
 
+- name: "Phase 7: Display deployment completion guide"
+  import_playbook: playbooks/guide.yml
+  vars:
+    phase_name: "Deployment Guide"
+    phase_description: "Display deployment completion information and next steps"
+  tags: 
+    - guide
+    - post-deployment
+    - documentation
+    - phase7

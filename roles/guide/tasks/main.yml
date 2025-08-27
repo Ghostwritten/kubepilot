@@ -1,0 +1,79 @@
+# =============================================================================
+# roles/guide/tasks/main.yml - Deployment Completion Guide
+# =============================================================================
+---
+- name: "Create deployment completion message file"
+  copy:
+    content: |
+      ==================================================================================
+                          KUBERNETES CLUSTER DEPLOYMENT COMPLETED
+      ==================================================================================
+      
+      CLUSTER INFORMATION:
+      ===================
+      Control Plane Endpoint: {{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443
+      Kubernetes Version:     {{ kube_version }}
+      Cluster Name:           {{ cluster_name | default('kubernetes') }}
+      Deployment Time:        {{ ansible_date_time.iso8601 }}
+      
+      NEXT STEPS:
+      ===========
+      
+      1. CONFIGURE REMOTE ACCESS
+         Download kubeconfig:
+         scp {{ ansible_user }}@{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:/etc/kubernetes/admin.conf ~/.kube/config
+         
+         Update server address:
+         sed -i 's|server: https://127.0.0.1:6443|server: https://{{ hostvars[groups['kube_control_plane'][0]].ansible_host }}:6443|g' ~/.kube/config
+         
+         Set permissions:
+         chmod 600 ~/.kube/config
+      
+      2. VERIFY CONNECTION
+         kubectl cluster-info
+         kubectl get nodes
+      
+      3. SECURITY RECOMMENDATIONS
+         * Implement RBAC for user access control
+         * Configure network policies for cluster security
+         * Use service accounts for application access
+         * Enable audit logging for compliance
+         * Create specific user accounts instead of using admin.conf
+      
+      4. PRODUCTION READINESS
+         * Configure monitoring and alerting
+         * Set up backup and disaster recovery
+         * Implement resource limits and requests
+         * Configure horizontal pod autoscaling
+         * Set up ingress controllers for external access
+      
+      5. USEFUL COMMANDS
+         kubectl get nodes -o wide
+         kubectl get pods --all-namespaces
+         kubectl get services --all-namespaces
+         kubectl top nodes
+         kubectl top pods --all-namespaces
+      
+      ==================================================================================
+                                SECURITY NOTICE
+      ==================================================================================
+      The admin.conf file contains cluster-admin privileges. For production
+      environments, create specific user accounts with appropriate RBAC
+      permissions instead of using admin.conf.
+      ==================================================================================
+    dest: "/tmp/kubepilot-deployment-guide.txt"
+    mode: '0644'
+
+- name: "Display deployment completion guide"
+  shell: cat /tmp/kubepilot-deployment-guide.txt
+  register: guide_output
+
+- name: "Show deployment completion guide"
+  debug:
+    var: guide_output.stdout_lines
+
+- name: "Remove temporary guide file"
+  file:
+    path: "/tmp/kubepilot-deployment-guide.txt"
+    state: absent
+
